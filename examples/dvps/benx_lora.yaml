@@ -1,0 +1,67 @@
+### model
+model_name_or_path: Qwen/Qwen2.5-Omni-7B
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+freeze_vision_tower: true   # unfreeze if you want the vision encoder to adapt to Sentinel imagery
+# deepspeed: examples/deepspeed/ds_z2_config.json   # uncomment for multi-GPU; z2 is usually enough for LoRA on a 7B model, use ds_z3_config.json if you still OOM
+
+### dataset
+dataset: benx_train
+template: qwen2_omni
+cutoff_len: 2048
+overwrite_cache: true
+dataset_dir: /net/home/plgrid/plgskoneru/LLaMA-Factory/data
+
+# --- streaming ---
+# With streaming=true, HF `datasets` reads the parquet lazily instead of
+# materializing the full split in memory/on disk as an Arrow cache.
+streaming: true
+buffer_size: 128              # shuffle buffer size (examples held in memory for shuffling)
+preprocessing_batch_size: 128 # batch size used when mapping/tokenizing while streaming
+preprocessing_num_workers: 16 # only used for non-streaming map calls; harmless to leave set
+
+# a single parquet file = 1 shard, so keep this low or pre-shard the file
+# (see note below) if you want to raise it.
+dataloader_num_workers: 1
+
+# Streaming datasets have no known length, so num_train_epochs can't be used
+# to compute total steps -- set max_steps explicitly instead.
+max_steps: 30000
+
+accelerator_config:
+  dispatch_batches: false   # required for streaming + multi-GPU/accelerate
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/finetuned/qwen2_omni-7b_por_fin/lora/
+logging_steps: 10
+save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 32
+gradient_accumulation_steps: 2
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+# eval_dataset with streaming: true works, but `val_size` (auto-split from
+# train) does NOT -- you must supply a separate eval dataset explicitly.
+eval_dataset: benx_val
+per_device_eval_batch_size: 32
+eval_strategy: steps
+eval_steps: 500

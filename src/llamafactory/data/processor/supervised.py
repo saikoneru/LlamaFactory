@@ -15,11 +15,12 @@
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Optional
+import inspect
 
 from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
 from .processor_utils import DatasetProcessor, greedy_knapsack, infer_seqlen
-
+from terramind_features import compute_num_placeholder_tokens
 
 if TYPE_CHECKING:
     from ..mm_plugin import AudioInput, ImageInput, VideoInput
@@ -47,6 +48,39 @@ class PackingParams:
     right_padding_length: int
 
 
+# def _substitute_terramind_marker(
+#     messages: list[dict[str, str]],
+#     terramind_s2l2a,
+#     placeholder_token: str,
+#     input_size: int,
+#     patch_size: int,
+# ) -> list[dict[str, str]]:
+#     """
+#     Replace TERRAMIND_PLACEHOLDER with N copies of the real placeholder
+#     token (if terramind_s2l2a is present for this example) or remove it
+#     entirely (if not) -- BEFORE tokenization, since this has to be text
+#     substitution, not token-id manipulation.
+ 
+#     Because TerraMind's placeholder count is fixed (not resolution-
+#     dependent like native image tokens), this doesn't need the mm_plugin
+#     machinery -- a single compute_num_placeholder_tokens() call covers it.
+#     """
+#     if terramind_s2l2a is not None:
+#         n_tokens = compute_num_placeholder_tokens(
+#             ["S2L2A"], input_size, patch_size, concat_modalities_as_tokens=True
+#         )
+#         replacement = placeholder_token * n_tokens
+#     else:
+#         replacement = ""
+ 
+#     new_messages = []
+#     for message in messages:
+#         content = message["content"]
+#         if TERRAMIND_PLACEHOLDER in content:
+#             content = content.replace(TERRAMIND_PLACEHOLDER, replacement)
+#         new_messages.append({**message, "content": content})
+#     return new_messages
+ 
 @dataclass
 class SupervisedDatasetProcessor(DatasetProcessor):
     def _encode_data_example(
@@ -58,16 +92,34 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         images: list["ImageInput"],
         videos: list["VideoInput"],
         audios: list["AudioInput"],
+        terramind_s2l2a: Any = None,
     ) -> tuple[list[int], list[int]]:
-        messages = self.template.mm_plugin.process_messages(prompt + response, images, videos, audios, self.processor)
-        input_ids, labels = self.template.mm_plugin.process_token_ids(
-            [], [], images, videos, audios, self.tokenizer, self.processor
+
+        terramind = {"S2L2A": terramind_s2l2a} if terramind_s2l2a is not None else None
+
+        # Only pass `terramind` to plugins that declare it (e.g. Qwen2OmniTerraMindPlugin) —
+        # avoids breaking every other plugin's process_messages/process_token_ids signature.
+        process_messages_kwargs = {}
+        if "terramind" in inspect.signature(self.template.mm_plugin.process_messages).parameters:
+            process_messages_kwargs["terramind"] = terramind
+
+        messages = self.template.mm_plugin.process_messages(
+            prompt + response, images, videos, audios, self.processor, **process_messages_kwargs
         )
+
+        process_token_ids_kwargs = {}
+        if "terramind" in inspect.signature(self.template.mm_plugin.process_token_ids).parameters:
+            process_token_ids_kwargs["terramind"] = terramind
+
+        input_ids, labels = self.template.mm_plugin.process_token_ids(
+            [], [], images, videos, audios, self.tokenizer, self.processor, **process_token_ids_kwargs
+        )
+
         discarding_history_cot = self.data_args.mask_history and not self.template.preserve_thinking
         encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools, discarding_history_cot)
         total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
         if self.data_args.mask_history:
-            encoded_pairs = encoded_pairs[::-1]  # high priority for last turns
+            encoded_pairs = encoded_pairs[::-1]
 
         for turn_idx, (source_ids, target_ids) in enumerate(encoded_pairs):
             if total_length >= self.data_args.cutoff_len:
@@ -87,12 +139,12 @@ class SupervisedDatasetProcessor(DatasetProcessor):
             else:
                 source_label = [IGNORE_INDEX] * source_len
 
-            if self.data_args.mask_history and turn_idx != 0:  # train on the last turn only
+            if self.data_args.mask_history and turn_idx != 0:
                 target_label = [IGNORE_INDEX] * target_len
             else:
                 target_label = target_ids
 
-            if self.data_args.mask_history:  # reversed sequences
+            if self.data_args.mask_history:
                 input_ids = source_ids + target_ids + input_ids
                 labels = source_label + target_label + labels
             else:
@@ -105,9 +157,8 @@ class SupervisedDatasetProcessor(DatasetProcessor):
 
         return input_ids, labels
 
+ 
     def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
-        # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         for i in range(len(examples["_prompt"])):
             if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
@@ -115,7 +166,13 @@ class SupervisedDatasetProcessor(DatasetProcessor):
                     "Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i])
                 )
                 continue
-
+ 
+            # FIX: this block was previously indented inside the `if` above,
+            # after `continue` -- unreachable for every example, meaning
+            # model_inputs never received anything for ANY sample, valid or
+            # not. Dedented to loop-body level, where it belongs.
+            terramind_s2l2a = examples.get("terramind_s2l2a", [None] * len(examples["_prompt"]))[i]
+ 
             input_ids, labels = self._encode_data_example(
                 prompt=examples["_prompt"][i],
                 response=examples["_response"][i],
@@ -124,14 +181,17 @@ class SupervisedDatasetProcessor(DatasetProcessor):
                 images=examples["_images"][i] or [],
                 videos=examples["_videos"][i] or [],
                 audios=examples["_audios"][i] or [],
+                terramind_s2l2a=terramind_s2l2a,
             )
+ 
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(labels)
             model_inputs["images"].append(examples["_images"][i])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
-
+            model_inputs["terramind_s2l2a"].append(terramind_s2l2a)
+ 
         return model_inputs
 
     def print_data_example(self, example: dict[str, list[int]]) -> None:

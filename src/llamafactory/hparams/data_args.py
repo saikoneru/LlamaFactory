@@ -144,6 +144,19 @@ class DataArguments:
         metadata={"help": "Whether or not to use a shared file system for the datasets."},
     )
 
+    terramind_placeholder_token: str = field(
+        default="<terramind>",
+        metadata={"help": "Text marker in raw message content, replaced with TerraMind placeholder tokens (or removed) before tokenization."},
+    )
+    terramind_input_size: int = field(
+        default=224,
+        metadata={"help": "TerraMind input resolution, used to compute the placeholder token count per example."},
+    )
+    terramind_patch_size: int = field(
+        default=16,
+        metadata={"help": "TerraMind patch size, used to compute the placeholder token count per example."},
+    )
+
     def __post_init__(self):
         def split_arg(arg):
             if isinstance(arg, str):
@@ -187,6 +200,12 @@ class DataArguments:
 
         if self.packing:
             self.cutoff_len -= 1  # avoid pad_to_multiple_of, needs improve
+            
+        if self.terramind_input_size % self.terramind_patch_size != 0:
+            raise ValueError(
+                f"`terramind_input_size` ({self.terramind_input_size}) must be divisible by "
+                f"`terramind_patch_size` ({self.terramind_patch_size})."
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

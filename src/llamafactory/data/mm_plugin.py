@@ -36,7 +36,8 @@ from transformers.models.mllama.processing_mllama import (
 from transformers.video_utils import make_batched_videos
 from typing_extensions import override
 
-from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER
+from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER, TERRAMIND_PLACEHOLDER
+from terramind_features import compute_num_placeholder_tokens
 from ..extras.packages import is_pillow_available, is_pyav_available, is_transformers_version_greater_than
 
 
@@ -3087,6 +3088,77 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
 
         return messages
 
+@dataclass
+class Qwen2OmniTerraMindPlugin(Qwen2OmniPlugin):
+    r"""Plugin for Qwen2.5-Omni + TerraMind.
+
+    TERRAMIND_PLACEHOLDER is the dataset-level sentinel (fixed, model-agnostic).
+    terramind_token is the actual special token registered on this model's
+    tokenizer -- passed in at construction, same as image_token/video_token/audio_token.
+    """
+
+    terramind_token: str | None = None
+    terramind_input_size: int = 224
+    terramind_patch_size: int = 16
+    terramind_concat_modalities_as_tokens: bool = True
+
+    def _terramind_modalities(self, terramind: Optional[dict[str, Any]]) -> list[str]:
+        if not terramind:
+            return []
+        return [modality for modality, value in terramind.items() if value is not None]
+
+    def _num_terramind_placeholder_tokens(self, modalities: list[str]) -> int:
+        if not modalities:
+            return 0
+        return compute_num_placeholder_tokens(
+            modalities,
+            self.terramind_input_size,
+            self.terramind_patch_size,
+            self.terramind_concat_modalities_as_tokens,
+        )
+
+    @override
+    def process_messages(
+        self,
+        messages: list[dict[str, str]],
+        images: list["ImageInput"],
+        videos: list["VideoInput"],
+        audios: list["AudioInput"],
+        processor: Optional["MMProcessor"],
+        terramind: Optional[dict[str, Any]] = None,
+    ) -> list[dict[str, str]]:
+        if TERRAMIND_PLACEHOLDER in "".join(m["content"] for m in messages) and self.terramind_token is None:
+            raise ValueError(
+                "This model does not support TerraMind input (terramind_token not set). "
+                "Please check whether the correct `template` is used."
+            )
+
+        messages = super().process_messages(messages, images, videos, audios, processor)
+        messages = deepcopy(messages)
+
+        modalities = self._terramind_modalities(terramind)
+        num_tokens = self._num_terramind_placeholder_tokens(modalities)
+        replacement = self.terramind_token * num_tokens if num_tokens else ""
+
+        for message in messages:
+            if TERRAMIND_PLACEHOLDER in message["content"]:
+                message["content"] = message["content"].replace(TERRAMIND_PLACEHOLDER, replacement, 1)
+
+        return messages
+
+    @override
+    def process_token_ids(
+        self,
+        input_ids: list[int],
+        labels: list[int] | None,
+        images: list["ImageInput"],
+        videos: list["VideoInput"],
+        audios: list["AudioInput"],
+        tokenizer: "PreTrainedTokenizer",
+        processor: Optional["MMProcessor"],
+        terramind: Optional[dict[str, Any]] = None,
+    ) -> tuple[list[int], list[int] | None]:
+        return super().process_token_ids(input_ids, labels, images, videos, audios, tokenizer, processor)
 
 @dataclass
 class VideoLlavaPlugin(BasePlugin):

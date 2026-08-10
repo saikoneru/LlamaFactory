@@ -127,6 +127,7 @@ class AlpacaDatasetConverter(DatasetConverter):
             "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
+            "_terramind_s2l2a": (example[self.dataset_attr.terramind_s2l2a] if self.dataset_attr.terramind_s2l2a else None),
         }
         return output
 
@@ -223,6 +224,7 @@ class SharegptDatasetConverter(DatasetConverter):
             "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
+            "_terramind_s2l2a": (example[self.dataset_attr.terramind_s2l2a] if self.dataset_attr.terramind_s2l2a else None),
         }
         return output
 

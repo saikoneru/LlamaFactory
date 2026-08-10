@@ -51,6 +51,8 @@ IGNORE_INDEX = -100
 
 IMAGE_PLACEHOLDER = os.getenv("IMAGE_PLACEHOLDER", "<image>")
 
+TERRAMIND_PLACEHOLDER = os.getenv("TERRAMIND_PLACEHOLDER", "<terramind>")
+
 LAYERNORM_NAMES = {"norm", "ln"}
 
 LLAMABOARD_CONFIG = "llamaboard_config.yaml"
@@ -106,6 +108,7 @@ MROPE_MODELS = {
     "qwen3_vl_moe",
     "qwen3_5",
     "qwen3_5_moe",
+    "qwen2_5_omni_terramind",
 }
 
 MULTIMODAL_SUPPORTED_MODELS = set()
