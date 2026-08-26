@@ -1,3 +1,19 @@
+### DVPS-FM Fork Changes
+
+[26/08/26] Added optional stateful training dataloader support using `torchdata.stateful_dataloader.StatefulDataLoader`.
+
+- Enable with `use_stateful_dataloader: true`.
+- Supports exact checkpoint/resume for map-style and streaming datasets.
+- Supports distributed DDP training and multiple dataloader workers.
+- Currently supported for SFT only type training and not preference tuning etc.,
+- DeepSpeed and FSDP are not yet supported.
+
+[26/08/26] Added independent evaluation interleave probabilities.
+
+Training and evaluation datasets can now use different numbers of datasets and separate mixing probabilities via `interleave_probs` and `eval_interleave_probs`.
+
+---
+
 ![# LlamaFactory](assets/logo.png)
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/hiyouga/LlamaFactory?style=social)](https://github.com/hiyouga/LlamaFactory/stargazers)
