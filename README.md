@@ -1,12 +1,13 @@
 ### DVPS-FM Fork Changes
 
-[26/08/26] Added optional stateful training dataloader support using `torchdata.stateful_dataloader.StatefulDataLoader`.
+[26/08/26] Added optional stateful training dataloader support using [StatefulDataLoader](https://meta-pytorch.org/data/beta/torchdata.stateful_dataloader.html).
 
 - Enable with `use_stateful_dataloader: true`.
 - Supports exact checkpoint/resume for map-style and streaming datasets.
 - Supports distributed DDP training and multiple dataloader workers.
-- Currently supported for SFT only type training and not preference tuning etc.,
+- Currently supported for SFT only; preference tuning is not yet supported.
 - DeepSpeed and FSDP are not yet supported.
+- Used only for training; the evaluation dataloader is kept unchanged.
 
 [26/08/26] Added independent evaluation interleave probabilities.
 
