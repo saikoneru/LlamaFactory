@@ -49,7 +49,10 @@ class DatasetModule(TypedDict):
 
 
 def merge_dataset(
-    all_datasets: list[Union["Dataset", "IterableDataset"]], data_args: "DataArguments", seed: int
+    all_datasets: list[Union["Dataset", "IterableDataset"]],
+    data_args: "DataArguments",
+    seed: int,
+    is_eval: bool = False,
 ) -> Union["Dataset", "IterableDataset"]:
     r"""Merge multiple datasets to a unified dataset."""
     if len(all_datasets) == 1:
@@ -71,9 +74,11 @@ def merge_dataset(
             "interleave_once": "all_exhausted_without_replacement",
         }[data_args.mix_strategy]
 
+        probabilities = data_args.eval_interleave_probs if is_eval else data_args.interleave_probs
+        
         return interleave_datasets(
             datasets=all_datasets,
-            probabilities=data_args.interleave_probs,
+            probabilities=probabilities,
             seed=seed,
             stopping_strategy=strategy_map,  # type: ignore
         )

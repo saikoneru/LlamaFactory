@@ -148,6 +148,11 @@ class TrainingArguments(ProfilerArguments, Fp8Arguments, RayArguments, BaseTrain
         metadata={"help": "deprecated"},
     )
 
+    use_stateful_dataloader: bool = field(
+        default=False,
+        metadata={"help": "Use torchdata StatefulDataLoader for the training dataloader and enable exact dataloader checkpoint/resume."},
+    )
+
     def __post_init__(self):
         RayArguments.__post_init__(self)
         BaseTrainingArguments.__post_init__(self)
