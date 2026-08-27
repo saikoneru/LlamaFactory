@@ -121,6 +121,8 @@ That's it for installation — no further setup needed.
 
 The only remaining step is the config file. An example is provided here: [`qwen_2.5omni_lora_sft.yaml`](https://github.com/saikoneru/LlamaFactory/blob/main/examples/train_lora/qwen_2.5omni_lora_sft.yaml).
 
+**NOTE**: Please change the output dir to where you have write permissions. Otherwise, it will crash mid run.
+
 ### Running Training Interactively
 
 ```bash
