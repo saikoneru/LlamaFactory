@@ -25,7 +25,7 @@ streaming: true
 ### output
 output_dir: /net/storage/pr3/plgrid/plggdvps/skoneru/llamafactory_bentxt
 logging_steps: 10
-save_steps: 60
+save_steps: 1000
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
