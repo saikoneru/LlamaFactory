@@ -1,4 +1,34 @@
 {
+  "st_dev_v1": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/dev.v1.st.json",
+    "formatting": "sharegpt",
+    "columns": {
+    "messages": "messages",
+    "audios": "audios"
+    },
+    "tags": {
+      "system_tag": "system",
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
+  "st_train_v1": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/train.v1.st.json",
+    "formatting": "sharegpt",
+    "columns": {
+    "messages": "messages",
+    "audios": "audios"
+    },
+    "tags": {
+      "system_tag": "system",
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
   "bentxt_train": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharded/train",
     "formatting": "sharegpt",
