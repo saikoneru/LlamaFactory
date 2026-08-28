@@ -20,6 +20,13 @@ from typing import TYPE_CHECKING, Any, Union
 from ..extras import logging
 from .data_utils import Role
 
+import io
+
+from ..extras.packages import is_pillow_available
+
+if is_pillow_available():
+    from PIL.Image import Image as ImageObject
+
 
 if TYPE_CHECKING:
     from datasets import Dataset, IterableDataset
@@ -75,6 +82,69 @@ class DatasetConverter:
 
         return medias
 
+
+    def _normalize_images(self, images):
+        """Convert images into an Arrow-safe common representation."""
+        images = self._find_medias(images)
+
+        if images is None:
+            return None
+
+        normalized = []
+
+        for image in images:
+            # Already encoded in HF Image representation.
+            if isinstance(image, dict):
+                normalized.append(
+                    {
+                        "bytes": image.get("bytes"),
+                        "path": image.get("path"),
+                    }
+                )
+                continue
+
+            # Filesystem path.
+            if isinstance(image, str):
+                normalized.append(
+                    {
+                        "bytes": None,
+                        "path": image,
+                    }
+                )
+                continue
+
+            # Decoded PIL image.
+            if is_pillow_available() and isinstance(image, ImageObject):
+                buffer = io.BytesIO()
+
+                # PNG is lossless and avoids guessing the source format.
+                image.save(buffer, format="PNG")
+
+                normalized.append(
+                    {
+                        "bytes": buffer.getvalue(),
+                        "path": None,
+                    }
+                )
+                continue
+
+            # Raw encoded bytes.
+            if isinstance(image, bytes):
+                normalized.append(
+                    {
+                        "bytes": image,
+                        "path": None,
+                    }
+                )
+                continue
+
+            raise TypeError(
+                "Unsupported image type while aligning dataset: "
+                f"{type(image).__name__}"
+            )
+
+        return normalized
+
     @abstractmethod
     def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
         r"""Convert a single example in the dataset to the standard format."""
@@ -124,7 +194,7 @@ class AlpacaDatasetConverter(DatasetConverter):
             "_response": response,
             "_system": example[self.dataset_attr.system] if self.dataset_attr.system else "",
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
-            "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
+            "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
@@ -220,7 +290,7 @@ class SharegptDatasetConverter(DatasetConverter):
             "_response": response,
             "_system": system,
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
-            "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
+            "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
@@ -360,7 +430,7 @@ class OpenAIDatasetConverter(DatasetConverter):
             "_response": response,
             "_system": system,
             "_tools": tools,
-            "_images": self._find_medias(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
+            "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }

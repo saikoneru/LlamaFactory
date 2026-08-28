@@ -109,6 +109,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not to evaluate on each dataset separately."},
     )
+    max_eval_samples: int | None = field(
+        default=None,
+        metadata={"help": "Truncate the number of evaluation examples."},
+    )
     packing: bool | None = field(
         default=None,
         metadata={"help": "Enable sequences packing in training. Will automatically enable in pre-training."},

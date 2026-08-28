@@ -72,21 +72,37 @@ def _load_single_dataset(
         data_path = dataset_attr.dataset_name
 
     elif dataset_attr.load_from == "file":
-        data_files = []
         local_path = os.path.join(data_args.dataset_dir, dataset_attr.dataset_name)
-        if os.path.isdir(local_path):  # is directory
-            for file_name in os.listdir(local_path):
-                data_files.append(os.path.join(local_path, file_name))
-        elif os.path.isfile(local_path):  # is file
-            data_files.append(local_path)
+
+        if os.path.isdir(local_path):
+            data_files = [
+                os.path.join(local_path, file_name)
+                for file_name in os.listdir(local_path)
+                if os.path.isfile(os.path.join(local_path, file_name))
+                and os.path.splitext(file_name)[-1][1:] in FILEEXT2TYPE
+            ]
+
+            if not data_files:
+                raise ValueError(f"No supported dataset files found in {local_path}.")
+
+        elif os.path.isfile(local_path):
+            data_files = [local_path]
+
         else:
             raise ValueError(f"File {local_path} not found.")
 
         data_path = FILEEXT2TYPE.get(os.path.splitext(data_files[0])[-1][1:], None)
-        if data_path is None:
-            raise ValueError("Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys())))
 
-        if any(data_path != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None) for data_file in data_files):
+        if data_path is None:
+            raise ValueError(
+                "Allowed file types: {}.".format(",".join(FILEEXT2TYPE.keys()))
+            )
+
+        if any(
+            data_path
+            != FILEEXT2TYPE.get(os.path.splitext(data_file)[-1][1:], None)
+            for data_file in data_files
+        ):
             raise ValueError("File types should be identical.")
     else:
         raise NotImplementedError(f"Unknown load type: {dataset_attr.load_from}.")
@@ -142,13 +158,13 @@ def _load_single_dataset(
         )
         if data_args.streaming and dataset_attr.load_from == "file":
             num_shards = training_args.dataloader_num_workers
-        
+
             if training_args.use_stateful_dataloader and not is_eval:
                 num_shards = max(
                     training_args.world_size * training_args.dataloader_num_workers,
                     training_args.world_size,
                 )
-        
+
             dataset = dataset.to_iterable_dataset(num_shards=num_shards)
 
     if dataset_attr.num_samples is not None and not data_args.streaming:
@@ -188,7 +204,9 @@ def _get_merged_dataset(
         if (stage == "rm" and dataset_attr.ranking is False) or (stage != "rm" and dataset_attr.ranking is True):
             raise ValueError("The dataset is not applicable in the current training stage.")
 
-        datasets[dataset_name] = _load_single_dataset(dataset_attr, model_args, data_args, training_args, is_eval=is_eval,)
+        datasets[dataset_name] = _load_single_dataset(
+            dataset_attr, model_args, data_args, training_args, is_eval=is_eval
+        )
 
     if return_dict:
         return datasets
@@ -325,6 +343,25 @@ def get_dataset(
             return_dict=data_args.eval_on_each_dataset,
             is_eval=True,
         )
+        if eval_dataset is not None and data_args.max_eval_samples is not None:
+            max_eval_samples = data_args.max_eval_samples
+
+            if isinstance(eval_dataset, dict):
+                # If eval_on_each_dataset=True
+                eval_dataset = {
+                    name: ds.take(max_eval_samples)
+                    if data_args.streaming
+                    else ds.select(range(min(max_eval_samples, len(ds))))
+                    for name, ds in eval_dataset.items()
+                }
+            else:
+                eval_dataset = (
+                    eval_dataset.take(max_eval_samples)
+                    if data_args.streaming
+                    else eval_dataset.select(
+                        range(min(max_eval_samples, len(eval_dataset)))
+                    )
+                )
 
     with training_args.main_process_first(desc="pre-process dataset", local=(not data_args.data_shared_file_system)):
         # move front to make sure eval_dataset(if contain or split) can preprocessed appropriately
