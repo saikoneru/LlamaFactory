@@ -30,7 +30,7 @@
     }
   },
   "bentxt_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharded/train",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharegpt-rgb/train",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -45,7 +45,7 @@
     }
   },
   "bentxt_val": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharded/val.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharegpt-rgb/val.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
