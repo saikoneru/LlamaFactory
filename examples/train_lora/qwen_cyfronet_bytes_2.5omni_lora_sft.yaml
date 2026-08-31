@@ -13,7 +13,7 @@ flash_attn: fa3
 ddp_find_unused_parameters: false
 
 ### dataset
-dataset: bentxt_train_bytes_por_sum_win# Audio and Image datasets
+dataset: bentxt_train_bytes_por_sum_win # Audio and Image datasets
 # dataset: st_train_v1 For audio only dataset
 # dataset: bentxt_train For image only dataset
 template: qwen2_omni
