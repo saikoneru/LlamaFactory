@@ -29,6 +29,36 @@
       "assistant_tag": "assistant"
     }
   },
+  "bentxt_train_bytes_por_sum_win": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "system_tag": "system",
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
+  "bentxt_val_bytes_por_sum_win": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "system_tag": "system",
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
   "bentxt_train": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharegpt-rgb/train",
     "formatting": "sharegpt",
