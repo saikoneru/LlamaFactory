@@ -4,6 +4,8 @@ from datasets import IterableDataset
 from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DistributedSampler, RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
+
+from ..extras.nvtx import maybe_wrap_fn
 import hashlib
 import json
 
@@ -81,7 +83,7 @@ def create_stateful_train_dataloader(trainer):
 
     dataloader_params = {
         "batch_size": trainer._train_batch_size,
-        "collate_fn": trainer.data_collator,
+        "collate_fn": maybe_wrap_fn(trainer.data_collator, "data/collate"),
         "num_workers": trainer.args.dataloader_num_workers,
         "pin_memory": trainer.args.dataloader_pin_memory,
         "persistent_workers": trainer.args.dataloader_persistent_workers,

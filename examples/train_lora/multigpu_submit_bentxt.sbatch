@@ -1,31 +1,37 @@
-#!/bin/bash
+#!/bin/bash -l
 #SBATCH --job-name=bentxt_multigpu
 #SBATCH --partition=plgrid-gpu-gh200
 #SBATCH --account=plggdvps01-gpu-gh200
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=119G
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-task=4
+#SBATCH --cpus-per-task=72
+#SBATCH --mem=400G
 #SBATCH --time=18:00:00
 #SBATCH --output=logs/%x-%j.out
-#SBATCH --error=logs/%x-%j.err
 
 # Allow environment variables passed via sbatch --export
 # (Note: Remove or adjust --export=NONE in header if passing variables)
 
 shopt -s expand_aliases
-set +e
-source /etc/profile
-set -e
 set -euo pipefail
 
-module load ML-bundle/24.06a
-source /net/storage/pr3/plgrid/plggdvps/skoneru/envs/terramind_llama/bin/activate
+ENV_PATH=$1
+CONFIG_PATH=$2
+
+module load ML-bundle/25.10 CUDA/13.0.2
+source $ENV_PATH/bin/activate
 mkdir -p logs
 
-export CUDA_VISIBLE_DEVICES=0,1
-export NPROC_PER_NODE=2
 export FORCE_TORCHRUN=1
+export NNODES=$SLURM_NNODES
+export NPROC_PER_NODE=$SLURM_GPUS_ON_NODE
+export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n1)
+export MASTER_PORT=29500
 
-# CONFIG_PATH comes from the command line sbatch --export call
-NCCL_IB_DISABLE=1 NCCL_P2P_DISABLE=1 llamafactory-cli train "$CONFIG_PATH"
+
+export NCCL_NET_GDR_C2C=0 
+export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
+export TORCHDYNAMO_CAPTURE_DYNAMIC_OUTPUT_SHAPE_OPS=1
+export TORCH_LOGS="graph_breaks,recompiles"
+srun bash -c "NODE_RANK=\$SLURM_NODEID llamafactory-cli train $CONFIG_PATH"

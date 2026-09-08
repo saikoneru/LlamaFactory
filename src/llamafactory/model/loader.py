@@ -31,6 +31,7 @@ from ..extras import logging
 from ..extras.misc import count_parameters, skip_check_imports, try_download_model_from_other_hub
 from ..extras.packages import is_torch_version_greater_than
 from .adapter import init_adapter
+from .model_utils.compile import configure_compile
 from .model_utils.liger_kernel import apply_liger_kernel
 from .model_utils.misc import register_autoclass
 from .model_utils.mod import convert_pretrained_model_to_mod, load_mod_pretrained_model
@@ -179,6 +180,8 @@ def load_model(
     register_autoclass(config, model, tokenizer)
 
     model = init_adapter(config, model, model_args, finetuning_args, is_trainable)
+
+    configure_compile(model, model_args, is_trainable)
 
     if add_valuehead:
         model = AutoModelForCausalLMWithValueHead.from_pretrained(model)

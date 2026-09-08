@@ -27,6 +27,7 @@ from peft import PeftModel
 from transformers import DataCollatorForSeq2Seq
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, MROPE_MODELS
+from ..extras.nvtx import nvtx_range
 from ..extras.packages import is_pillow_available
 
 
@@ -402,16 +403,17 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
             batch_input_ids[0] = features[0]["input_ids"]
 
-        mm_inputs = self.template.mm_plugin.get_mm_inputs(
-            batch_images,
-            batch_videos,
-            batch_audios,
-            batch_imglens,
-            batch_vidlens,
-            batch_audlens,
-            batch_input_ids,
-            self.processor,
-        )
+        with nvtx_range(f"data/collate/mm_inputs(imgs={len(batch_images)})"):
+            mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                batch_images,
+                batch_videos,
+                batch_audios,
+                batch_imglens,
+                batch_vidlens,
+                batch_audlens,
+                batch_input_ids,
+                self.processor,
+            )
         if "token_type_ids" in mm_inputs:
             token_type_ids = mm_inputs.pop("token_type_ids")
             for i, feature in enumerate(features):
@@ -430,7 +432,8 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
             mm_inputs["mm_token_type_ids"] = torch.tensor(padded, dtype=torch.long)
 
-        features: dict[str, torch.Tensor] = super().__call__(features)
+        with nvtx_range("data/collate/pad"):
+            features: dict[str, torch.Tensor] = super().__call__(features)
 
         bsz, seq_len = features["input_ids"].shape[:2]
         is_omni = model_type in [
@@ -448,21 +451,22 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 features["has_dummy_image"] = True
 
             # When fake image/audio was injected, sequence_boundaries no longer match the tensor; use non-packing path.
-            if not has_packing:
-                self._compute_rope_position_ids(features, mm_inputs)
-            else:
-                if is_omni:  # TODO: support omni models for packed sequences @kuangdd
-                    raise RuntimeError("Omni models are not supported for packed sequences for now.")
+            with nvtx_range("data/collate/rope"):
+                if not has_packing:
+                    self._compute_rope_position_ids(features, mm_inputs)
+                else:
+                    if is_omni:  # TODO: support omni models for packed sequences @kuangdd
+                        raise RuntimeError("Omni models are not supported for packed sequences for now.")
 
-                self._compute_rope_position_ids_with_packing(
-                    features,
-                    mm_inputs,
-                    packing_params_list,
-                    batch_imglens,
-                    batch_vidlens,
-                    batch_audlens,
-                    has_dummy_image,
-                )
+                    self._compute_rope_position_ids_with_packing(
+                        features,
+                        mm_inputs,
+                        packing_params_list,
+                        batch_imglens,
+                        batch_vidlens,
+                        batch_audlens,
+                        has_dummy_image,
+                    )
 
             # For transformers compatibility, after https://github.com/huggingface/transformers/issues/39400
             if features["position_ids"].dim() == 3:
@@ -538,7 +542,7 @@ class SFTDataCollatorWith4DAttentionMask(MultiModalDataCollatorForSeq2Seq):
                 features[key] = value.index_select(1, non_padding_indices)
             elif key in keys_on_seq_dim_1 and value.dim() == 2 and value.size(0) == 1 and value.size(1) == seq_len:
                 features[key] = value.index_select(1, non_padding_indices)
-
+                
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
         features = super().__call__(features)
         has_dummy_image = features.pop("has_dummy_image", False)

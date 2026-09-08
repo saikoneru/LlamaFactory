@@ -28,6 +28,7 @@ from typing_extensions import override
 
 from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
+from ...extras.nvtx import maybe_wrap_callable, maybe_wrap_dataloader, nvtx_profiler_window, nvtx_range
 from ..callbacks import SaveProcessorCallback
 from ..fp8_utils import configure_fp8_environment, patch_accelerator_for_fp8, verify_fp8_status
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
@@ -130,11 +131,18 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         if training_args.fp8 and hasattr(self, "accelerator"):  # verify FP8 status after trainer initialization
             verify_fp8_status(self.accelerator, training_args)
 
+        # `backward` is called from inside `Trainer.training_step`, so mark it here.
+        if hasattr(self, "accelerator"):
+            maybe_wrap_callable(self.accelerator, "backward", "bwd")
+
     @override
     def create_optimizer(self, *args, **kwargs) -> "torch.optim.Optimizer":
         if self.optimizer is None:
             self.optimizer = create_custom_optimizer(self.model, self.args, self.finetuning_args)
-        return super().create_optimizer(*args, **kwargs)
+
+        optimizer = super().create_optimizer(*args, **kwargs)
+        maybe_wrap_callable(optimizer, "step", "optim/step")
+        return optimizer
 
     @override
     def create_scheduler(
@@ -151,18 +159,31 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         return super()._get_train_sampler(*args, **kwargs)
 
     @override
+    def training_step(self, *args, **kwargs):
+        nvtx_profiler_window(self.state.global_step)
+        with nvtx_range(f"train_step#{self.state.global_step}"):
+            return super().training_step(*args, **kwargs)
+
+    @override
     def compute_loss(self, model, inputs, *args, **kwargs):
-        if self.finetuning_args.use_asft_loss:
-            with torch.no_grad():
-                ref_outputs = self.ref_model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs.get("attention_mask", None),
-                )
-                ref_logits = ref_outputs.logits
-            outputs = model(**inputs)
-            return self.compute_loss_func(outputs, inputs["labels"], ref_logits)
-        else:
-            return super().compute_loss(model, inputs, *args, **kwargs)
+        with nvtx_range("fwd"):
+            if self.finetuning_args.use_asft_loss:
+                with torch.no_grad(), nvtx_range("fwd/ref_model"):
+                    ref_outputs = self.ref_model(
+                        input_ids=inputs["input_ids"],
+                        attention_mask=inputs.get("attention_mask", None),
+                    )
+                    ref_logits = ref_outputs.logits
+                outputs = model(**inputs)
+                return self.compute_loss_func(outputs, inputs["labels"], ref_logits)
+            else:
+                return super().compute_loss(model, inputs, *args, **kwargs)
+
+    @override
+    def _maybe_log_save_evaluate(self, *args, **kwargs):
+        # contains the `tr_loss` all-gather + `.item()`, i.e. a device-to-host sync
+        with nvtx_range("sync/log_save_eval"):
+            return super()._maybe_log_save_evaluate(*args, **kwargs)
 
     @override
     def prediction_step(
@@ -320,11 +341,12 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
                 self._stateful_dataloader_restored = True
                 logger.info_rank0(f"Restored StatefulDataLoader state from {checkpoint_dir}")
     
-        return train_dataloader
+        return maybe_wrap_dataloader(train_dataloader, name="train")
 
     @override
     def _save_checkpoint(self, model, trial):
-        super()._save_checkpoint(model, trial)
+        with nvtx_range("ckpt/save_model"):
+            super()._save_checkpoint(model, trial)
     
         if not self.args.use_stateful_dataloader:
             return
@@ -333,6 +355,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         run_dir = self._get_output_dir(trial=trial)
         output_dir = os.path.join(run_dir, checkpoint_folder)
     
-        self.accelerator.wait_for_everyone()
-        save_stateful_dataloader_state(self, output_dir)
-        self.accelerator.wait_for_everyone()
+        with nvtx_range("ckpt/save_dataloader_state"):
+            self.accelerator.wait_for_everyone()
+            save_stateful_dataloader_state(self, output_dir)
+            self.accelerator.wait_for_everyone()

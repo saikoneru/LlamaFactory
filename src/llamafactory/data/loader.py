@@ -21,6 +21,7 @@ from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
 from ..extras.misc import check_version, has_tokenized_data
+from ..extras.nvtx import maybe_wrap_fn
 from .converter import align_dataset
 from .data_utils import get_dataset_module, merge_dataset, read_cloud_json, split_dataset
 from .parser import get_dataset_list
@@ -286,7 +287,7 @@ def _get_preprocessed_dataset(
         )
 
     dataset = dataset.map(
-        dataset_processor.preprocess_dataset,
+        maybe_wrap_fn(dataset_processor.preprocess_dataset, "data/map_batch"),
         batched=True,
         batch_size=data_args.preprocessing_batch_size,
         remove_columns=column_names,
