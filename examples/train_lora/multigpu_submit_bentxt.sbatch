@@ -23,6 +23,16 @@ module load ML-bundle/25.10 CUDA/13.0.2
 source $ENV_PATH/bin/activate
 mkdir -p logs
 
+CACHE_ROOT="$SCRATCH/llamafactory_cache"
+mkdir -p "$CACHE_ROOT/huggingface" "$CACHE_ROOT/tmp" "$CACHE_ROOT/torchinductor"
+export HF_HOME="$CACHE_ROOT/huggingface"
+export HF_DATASETS_CACHE="$CACHE_ROOT/huggingface/datasets"
+export HUGGINGFACE_HUB_CACHE="$CACHE_ROOT/huggingface/hub"
+export TMPDIR="$CACHE_ROOT/tmp"
+export TMP="$CACHE_ROOT/tmp"
+export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
+export NCCL_ENABLE_C2C_GDR=0
+
 export FORCE_TORCHRUN=1
 export NNODES=$SLURM_NNODES
 export NPROC_PER_NODE=$SLURM_GPUS_ON_NODE
