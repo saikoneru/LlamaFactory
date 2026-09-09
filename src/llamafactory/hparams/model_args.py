@@ -150,6 +150,33 @@ class BaseModelArguments:
         default=True,
         metadata={"help": "Whether or not to use reentrant gradient checkpointing."},
     )
+    regional_compile: bool = field(
+        default=False,
+        metadata={
+            "help": "Compile each repeated transformer block on its own instead of handing the whole "
+            "model to `torch_compile`. See `model/model_utils/compile.py` for the full policy."
+        },
+    )
+    regional_compile_backend: str = field(
+        default="inductor",
+        metadata={"help": "Backend used by `regional_compile`, e.g. `inductor`, `aot_eager`, `eager`."},
+    )
+    regional_compile_mode: str | None = field(
+        default=None,
+        metadata={"help": "`torch.compile` mode used by `regional_compile`, e.g. `max-autotune-no-cudagraphs`."},
+    )
+    regional_compile_dynamic: str = field(
+        default="auto",
+        metadata={
+            "help": "Shape handling for `regional_compile`: `auto` promotes to dynamic on the second "
+            "shape, `true` compiles symbolic straight away (use this without `packing`), `false` "
+            "specialises on every shape (only safe with `packing`). Bare yaml booleans are accepted."
+        },
+    )
+    regional_compile_exclude: str = field(
+        default="visual,vision_tower,vision_model,audio_tower,image_encoder",
+        metadata={"help": "Comma-separated module names whose block stacks `regional_compile` skips."},
+    )
     upcast_layernorm: bool = field(
         default=False,
         metadata={"help": "Whether or not to upcast the layernorm weights in fp32."},

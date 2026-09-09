@@ -90,18 +90,27 @@ class DatasetAttr:
                 self.set_attr(tag, attr["tags"])
 
 
-def get_dataset_list(dataset_names: list[str] | None, dataset_dir: str | dict) -> list["DatasetAttr"]:
+def get_dataset_list(
+    dataset_names: list[str] | None,
+    dataset_dir: str | dict,
+    dataset_info_path: str | None = None,
+) -> list["DatasetAttr"]:
     r"""Get the attributes of the datasets."""
     if dataset_names is None:
         dataset_names = []
 
+    config_path = dataset_info_path or DATA_CONFIG
     if isinstance(dataset_dir, dict):
         dataset_info = dataset_dir
     elif dataset_dir == "ONLINE":
         dataset_info = None
     else:
-        if dataset_dir.startswith("REMOTE:"):
+        if dataset_info_path is not None:
+            config_path = dataset_info_path
+        elif dataset_dir.startswith("REMOTE:"):
             config_path = hf_hub_download(repo_id=dataset_dir[7:], filename=DATA_CONFIG, repo_type="dataset")
+        elif os.path.isfile(dataset_dir) and dataset_dir.endswith(".json"):
+            config_path = dataset_dir
         else:
             config_path = os.path.join(dataset_dir, DATA_CONFIG)
 
@@ -123,7 +132,7 @@ def get_dataset_list(dataset_names: list[str] | None, dataset_dir: str | dict) -
             continue
 
         if name not in dataset_info:
-            raise ValueError(f"Undefined dataset {name} in {DATA_CONFIG}.")
+            raise ValueError(f"Undefined dataset {name} in {config_path}.")
 
         has_hf_url = "hf_hub_url" in dataset_info[name]
         has_ms_url = "ms_hub_url" in dataset_info[name]

@@ -16,11 +16,12 @@ import os
 from typing import TYPE_CHECKING, Literal, Optional, Union
 
 import numpy as np
-from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from datasets import Dataset, DatasetDict, IterableDataset, load_dataset, load_from_disk
 
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
 from ..extras.misc import check_version, has_tokenized_data
+from ..extras.nvtx import maybe_wrap_fn
 from .converter import align_dataset
 from .data_utils import get_dataset_module, merge_dataset, read_cloud_json, split_dataset
 from .parser import get_dataset_list
@@ -153,10 +154,10 @@ def _load_single_dataset(
             split=dataset_attr.split,
             cache_dir=model_args.cache_dir,
             token=model_args.hf_hub_token,
-            num_proc=data_args.preprocessing_num_workers,
-            streaming=data_args.streaming and dataset_attr.load_from != "file",
+            num_proc=None if data_args.streaming else data_args.preprocessing_num_workers,
+            streaming=data_args.streaming,
         )
-        if data_args.streaming and dataset_attr.load_from == "file":
+        if data_args.streaming and dataset_attr.load_from == "file" and not isinstance(dataset, IterableDataset):
             num_shards = training_args.dataloader_num_workers
 
             if training_args.use_stateful_dataloader and not is_eval:
@@ -200,7 +201,9 @@ def _get_merged_dataset(
         return None
 
     datasets = {}
-    for dataset_name, dataset_attr in zip(dataset_names, get_dataset_list(dataset_names, data_args.dataset_dir)):
+    for dataset_name, dataset_attr in zip(
+        dataset_names, get_dataset_list(dataset_names, data_args.dataset_dir, data_args.dataset_info)
+    ):
         if (stage == "rm" and dataset_attr.ranking is False) or (stage != "rm" and dataset_attr.ranking is True):
             raise ValueError("The dataset is not applicable in the current training stage.")
 
@@ -286,7 +289,7 @@ def _get_preprocessed_dataset(
         )
 
     dataset = dataset.map(
-        dataset_processor.preprocess_dataset,
+        maybe_wrap_fn(dataset_processor.preprocess_dataset, "data/map_batch"),
         batched=True,
         batch_size=data_args.preprocessing_batch_size,
         remove_columns=column_names,

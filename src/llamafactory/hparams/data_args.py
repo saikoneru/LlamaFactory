@@ -39,6 +39,15 @@ class DataArguments:
         default="data",
         metadata={"help": "Path to the folder containing the datasets."},
     )
+    dataset_info: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Path to a dataset info JSON file. Defaults to `<dataset_dir>/dataset_info.json`. "
+                "Use this to load a non-default file such as `data/dataset_info_0.json`."
+            )
+        },
+    )
     media_dir: str | None = field(
         default=None,
         metadata={"help": "Path to the folder containing the images, videos or audios. Defaults to `dataset_dir`."},

@@ -37,6 +37,7 @@ from transformers.video_utils import make_batched_videos
 from typing_extensions import override
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER
+from ..extras.nvtx import nvtx_range
 from ..extras.packages import is_pillow_available, is_pyav_available, is_transformers_version_greater_than
 
 
@@ -257,21 +258,27 @@ class MMPluginMixin:
     def _regularize_images(self, images: list["ImageInput"], **kwargs) -> "RegularizedImageOutput":
         r"""Regularize images to avoid error. Including reading and pre-processing."""
         results = []
-        for image in images:
-            if isinstance(image, (str, BinaryIO)):
-                image = Image.open(image)
-            elif isinstance(image, bytes):
-                image = Image.open(BytesIO(image))
-            elif isinstance(image, dict):
-                if image["bytes"] is not None:
-                    image = Image.open(BytesIO(image["bytes"]))
-                else:
-                    image = Image.open(image["path"])
+        with nvtx_range(f"data/image_regularize(n={len(images)})"):
+            for image in images:
+                # PIL is lazy: for a path this is where the file is opened and, for a small
+                # file, fully read. For inline bytes there is no I/O at all here.
+                with nvtx_range("data/image_load"):
+                    if isinstance(image, (str, BinaryIO)):
+                        image = Image.open(image)
+                    elif isinstance(image, bytes):
+                        image = Image.open(BytesIO(image))
+                    elif isinstance(image, dict):
+                        if image["bytes"] is not None:
+                            image = Image.open(BytesIO(image["bytes"]))
+                        else:
+                            image = Image.open(image["path"])
 
-            if not isinstance(image, ImageObject):
-                raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
+                if not isinstance(image, ImageObject):
+                    raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
 
-            results.append(self._preprocess_image(image, **kwargs))
+                # resize/convert forces the actual pixel decode
+                with nvtx_range("data/image_preprocess"):
+                    results.append(self._preprocess_image(image, **kwargs))
 
         return {"images": results}
 
