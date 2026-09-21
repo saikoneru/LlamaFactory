@@ -17,11 +17,15 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+from ....utils import logging
 from .seq_comm import SeqAllToAll4D
 from .ulysses import (
     get_ulysses_sequence_parallel_group,
     get_ulysses_sequence_parallel_world_size,
 )
+
+
+logger = logging.get_logger(__name__)
 
 
 def is_gdn_layer(layer) -> bool:
@@ -107,6 +111,7 @@ def gdn_forward_with_cp(self, hidden_states, attention_mask=None, **kwargs):
         global_position_ids = torch.cat(global_position_ids, dim=-1).contiguous()
         try:
             from transformers.modeling_flash_attention_utils import prepare_fa_kwargs_from_position_ids
+
             cu_seqlens = prepare_fa_kwargs_from_position_ids(global_position_ids)[0][0]
         except ImportError:
             cu_seqlens = None
@@ -248,3 +253,19 @@ def gdn_forward_with_cp(self, hidden_states, attention_mask=None, **kwargs):
     # Output projection in CP layout
     output = self.out_proj(norm_out)
     return output
+
+
+def apply_gdn_attention(model, cp_size: int) -> None:
+    """Install the sequence-parallel GDN forward on each unique linear-attention module."""
+    if cp_size > 1:
+        replaced_modules = set()
+        for name, module in model.named_modules():
+            if is_gdn_layer(module):
+                gdn_module = _get_gdn_module(module)
+                if id(gdn_module) in replaced_modules:
+                    continue
+                replaced_modules.add(id(gdn_module))
+                gdn_module.original_forward = gdn_module.forward
+                gdn_module.forward = gdn_forward_with_cp.__get__(gdn_module, type(gdn_module))
+                gdn_name = name if gdn_module is module else f"{name}.linear_attn"
+                logger.info_rank0(f"Replaced GDN forward in {gdn_name} with gdn_forward_with_cp for context parallel.")

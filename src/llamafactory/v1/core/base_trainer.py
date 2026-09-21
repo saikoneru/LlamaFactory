@@ -239,7 +239,12 @@ class BaseTrainer:
 
     @abstractmethod
     def compute_loss(self, batch: BatchInput) -> Tensor:
-        """Compute the scalar loss."""
+        """Compute the scalar loss.
+
+        Subclasses must handle sequence-parallel layout and loss aggregation when
+        `self.cp_size > 1`, or reject context parallelism during initialization.
+        The shared training loop does not dispatch sequence-parallel loss.
+        """
         ...
 
     def fit(self) -> None:
@@ -265,14 +270,7 @@ class BaseTrainer:
                 step_valid_tokens = DistributedInterface().all_reduce(step_valid_tokens, op=ReduceOp.SUM)
                 num_micro = len(micro_batches)
                 for i, micro_batch in enumerate(micro_batches):
-                    if self.args.cp_size > 1:
-                        from ..plugins.model_plugins.parallelization.sequence_parallel import (
-                            SequenceParallelLossPlugin,
-                        )
-
-                        loss = SequenceParallelLossPlugin("sequence_parallel_loss")(self.model, micro_batch)
-                    else:
-                        loss = self.compute_loss(micro_batch)
+                    loss = self.compute_loss(micro_batch)
                     mini_step_valid_tokens = compute_valid_tokens([micro_batch])
                     # fsdp uses mean reduction so we need to scale the loss by dp_size
                     loss = loss * mini_step_valid_tokens * self.dp_size / (step_valid_tokens + 1e-6)

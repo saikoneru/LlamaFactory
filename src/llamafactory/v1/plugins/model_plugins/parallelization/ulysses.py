@@ -15,15 +15,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+from functools import partial
 from typing import Any, Optional
 
 import torch
 import torch.distributed as dist
+import transformers
 from torch import Tensor
 from torch.distributed import ProcessGroup
 
+from ....utils import logging
 from .seq_comm import SeqAllToAll4D
 
+
+logger = logging.get_logger(__name__)
 
 _ULYSSES_SEQUENCE_PARALLEL_GROUP = None
 
@@ -187,3 +193,95 @@ class UlyssesAttention(torch.nn.Module):
 
         # out e.g., [s/p::h]
         return output
+
+
+def new_flash_attn_forward(
+    query_states,
+    key_states,
+    value_states,
+    attention_mask,
+    sequence_parallel_size=1,
+    dropout=0,
+    deterministic=False,
+    is_causal=True,
+    group=None,
+    mode="ulysses",
+    attn_fn=None,
+    target_dtype=None,
+    **kwargs,
+):
+    """Route causal language attention through Ulysses and leave replicated encoders native."""
+    if mode == "ulysses":
+        if not is_causal:
+            return attn_fn(
+                query_states,
+                key_states,
+                value_states,
+                attention_mask,
+                is_causal=False,
+                dropout=dropout,
+                deterministic=deterministic,
+                target_dtype=target_dtype,
+                **kwargs,
+            )
+
+        dist_attn = UlyssesAttention(sequence_process_group=group, attn_fn=attn_fn)
+        attn_output = dist_attn(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            query_length=query_states.shape[1] * sequence_parallel_size,
+            deterministic=deterministic,
+            dropout_p=dropout,
+            causal=is_causal,
+            position_ids=kwargs.get("position_ids", None),
+            target_dtype=target_dtype,
+        )
+    else:
+        raise NotImplementedError("Other sequence parallel modes are to be implemented.")
+
+    return attn_output
+
+
+def apply_ulysses_attention(model, cp_size: int, group: dist.ProcessGroup) -> None:
+    """Validate and install the Ulysses FlashAttention bridge for one process group."""
+    # Replace _flash_attention_forward with new_flash_attn_forward
+    set_ulysses_sequence_parallel_group(group)
+
+    try:
+        num_attention_heads, num_key_value_heads = (
+            model.config.num_attention_heads,
+            model.config.num_key_value_heads,
+        )
+    except AttributeError:
+        num_attention_heads, num_key_value_heads = (
+            model.config.text_config.num_attention_heads,
+            model.config.text_config.num_key_value_heads,
+        )
+
+    assert num_attention_heads % cp_size == 0, "num_attention_heads must be divisible by cp_size"
+    assert num_key_value_heads % cp_size == 0, "num_key_value_heads must be divisible by cp_size"
+
+    origin_attn = transformers.modeling_flash_attention_utils._flash_attention_forward
+    new_flash_attention_forward = partial(
+        new_flash_attn_forward,
+        group=get_ulysses_sequence_parallel_group(),
+        mode="ulysses",
+        attn_fn=origin_attn,
+        sequence_parallel_size=cp_size,
+    )
+
+    for module_name, module in list(sys.modules.items()):
+        try:
+            if (
+                hasattr(module, "__file__")
+                and "transformers" in module.__file__
+                and getattr(module._flash_attention_forward, "__name__", "") == "_flash_attention_forward"
+            ):
+                module._flash_attention_forward = new_flash_attention_forward
+                logger.info_rank0(
+                    f"Replaced _flash_attention_forward in module {module_name} with new_flash_attn_forward for sequence parallel."
+                )
+        except (AttributeError, TypeError):
+            continue

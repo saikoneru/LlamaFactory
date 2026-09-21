@@ -12,19 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
+
 import pytest
 import torch
 import torch.multiprocessing as mp
+from torch import nn
 
+import llamafactory.v1.plugins.model_plugins.parallelization.hook as hook_module
 from llamafactory.v1.accelerator.interface import DistributedInterface
 from llamafactory.v1.config.model_args import ModelArguments
 from llamafactory.v1.config.training_args import TrainingArguments
 from llamafactory.v1.core.model_engine import ModelEngine
 from llamafactory.v1.plugins.model_plugins.parallelization import ulysses
+from llamafactory.v1.plugins.model_plugins.parallelization.batch import prepare_sequence_parallel_batch
 from llamafactory.v1.plugins.model_plugins.parallelization.sequence_parallel import (
     SequenceParallelModelPlugin,
     sequence_parallel_loss,
 )
+from llamafactory.v1.utils.constants import IGNORE_INDEX
 from llamafactory.v1.utils.env import find_available_port
 from llamafactory.v1.utils.pytest import dist_env
 
@@ -99,3 +105,102 @@ def test_sequence_parallel_loss(cp_size, dp_size, batch_size):
     mp.spawn(
         _test_sequence_parallel_loss, args=(world_size, master_port, cp_size, dp_size, batch_size), nprocs=world_size
     )
+
+
+def test_non_causal_multimodal_encoder_attention_bypasses_ulysses():
+    captured_is_causal = None
+
+    def fake_native_attention(query, _key, _value, _attention_mask, **kwargs):
+        nonlocal captured_is_causal
+        captured_is_causal = kwargs["is_causal"]
+        return query + 1
+
+    query = torch.zeros(1, 4, 2, 8)
+    output = ulysses.new_flash_attn_forward(query, query, query, None, is_causal=False, attn_fn=fake_native_attention)
+
+    torch.testing.assert_close(output, query + 1)
+    assert captured_is_causal is False
+
+
+def _device_mesh(rank=0, size=2):
+    return {"cp": SimpleNamespace(size=lambda: size, get_local_rank=lambda: rank)}
+
+
+class _RecordingLanguageModel(nn.Module):
+    def forward(self, **kwargs):
+        return kwargs
+
+
+def test_multimodal_sequence_parallel_hook(monkeypatch):
+    # One shard gets non-contiguous visual rows while the next shard is empty.
+    cp_rank = [1]
+    device_mesh = {"cp": SimpleNamespace(size=lambda: 3, get_local_rank=lambda: cp_rank[0])}
+    distributed = SimpleNamespace(get_device_mesh=lambda _dim: device_mesh)
+    monkeypatch.setattr(hook_module, "DistributedInterface", lambda: distributed)
+
+    model = nn.Module()
+    model.model = core = nn.Module()
+    boundary = _RecordingLanguageModel()
+    core.visual = nn.Identity()
+    core.language_model = boundary
+    hook_module.install_sequence_parallel_hook(SimpleNamespace(get_base_model=lambda: model))
+
+    fused_inputs = torch.arange(24, dtype=torch.float32).view(2, 6, 2)
+    attention_mask = torch.tensor([[1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 0, 0]])
+    position_ids = torch.arange(36).view(3, 2, 6)
+    visual_mask = torch.tensor([[True, False, False, True, False, False], [True, True, True, False, False, False]])
+    visual_embeds = torch.arange(10, dtype=torch.float32).view(5, 2).requires_grad_()
+    model_inputs = {
+        "input_ids": None,
+        "inputs_embeds": fused_inputs,
+        "attention_mask": attention_mask,
+        "position_ids": position_ids,
+        "visual_pos_masks": visual_mask,
+        "deepstack_visual_embeds": [visual_embeds],
+    }
+
+    outputs = boundary(**model_inputs)
+    torch.testing.assert_close(outputs["inputs_embeds"], fused_inputs[:, 2:4])
+    torch.testing.assert_close(outputs["attention_mask"], attention_mask[:, 2:4])
+    torch.testing.assert_close(outputs["position_ids"], position_ids[..., 2:4])
+    torch.testing.assert_close(outputs["visual_pos_masks"], visual_mask[:, 2:4])
+    torch.testing.assert_close(outputs["deepstack_visual_embeds"][0], visual_embeds[[1, 4]])
+    assert outputs["use_cache"] is False
+
+    outputs["deepstack_visual_embeds"][0].sum().backward()
+    expected_grad = torch.zeros_like(visual_embeds)
+    expected_grad[[1, 4]] = 1
+    torch.testing.assert_close(visual_embeds.grad, expected_grad)
+
+    cp_rank[0] = 2
+    visual_embeds.grad = None
+    empty_visual_embeds = boundary(**model_inputs)["deepstack_visual_embeds"][0]
+    assert empty_visual_embeds.shape == (0, 2)
+    empty_visual_embeds.sum().backward()
+    torch.testing.assert_close(visual_embeds.grad, torch.zeros_like(visual_embeds))
+
+
+def test_prepare_multimodal_sequence_parallel_batch_preserves_encoder_inputs_and_shifts_targets():
+    pixel_values = torch.arange(12, dtype=torch.float32).view(3, 4)
+    batch = {
+        "input_ids": torch.tensor([[1, 2, 3]]),
+        "attention_mask": torch.ones(1, 3, dtype=torch.long),
+        "position_ids": torch.tensor([[0, 1, 2]]),
+        "mm_token_type_ids": torch.tensor([[0, 1, 1]]),
+        "labels": torch.tensor([[1, 2, 3]]),
+        "loss_weights": torch.tensor([[9.0, 0.5, 2.0]]),
+        "pixel_values": pixel_values,
+    }
+    for rank in range(2):
+        prepared = prepare_sequence_parallel_batch(
+            batch, device=torch.device("cpu"), device_mesh=_device_mesh(rank), uses_mrope=True
+        )
+        assert prepared.model_inputs["input_ids"].tolist() == [[1, 2, 3, 0]]
+        assert prepared.model_inputs["mm_token_type_ids"].tolist() == [[0, 1, 1, 0]]
+        assert "labels" not in prepared.model_inputs and "loss_weights" not in prepared.model_inputs
+        assert "position_ids" not in prepared.model_inputs
+        assert prepared.model_inputs["attention_mask"].tolist() == [[1, 1, 1, 0]]
+        torch.testing.assert_close(prepared.model_inputs["pixel_values"], pixel_values)
+        assert prepared.local_shift_labels.tolist() == ([[2, 3]] if rank == 0 else [[IGNORE_INDEX, IGNORE_INDEX]])
+        assert prepared.local_shift_loss_weights.tolist() == ([[0.5, 2.0]] if rank == 0 else [[0.0, 0.0]])
+        assert prepared.global_loss_weight_sum.item() == 2.5
