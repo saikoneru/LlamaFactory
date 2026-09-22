@@ -17,7 +17,8 @@ from enum import StrEnum, unique
 from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
 
 import fsspec
-from datasets import DatasetDict, concatenate_datasets, interleave_datasets
+from datasets import DatasetDict, Image, Value, concatenate_datasets, interleave_datasets
+from datasets.features import List
 
 from ..extras import logging
 
@@ -48,6 +49,37 @@ class DatasetModule(TypedDict):
     eval_dataset: Optional[Union["Dataset", "IterableDataset", dict[str, "Dataset"]]]
 
 
+def _is_null_feature(feature: Any) -> bool:
+    return isinstance(feature, Value) and feature.dtype == "null"
+
+
+def _unify_mm_features_for_mix(
+    all_datasets: list[Union["Dataset", "IterableDataset"]],
+) -> list[Union["Dataset", "IterableDataset"]]:
+    r"""Make image columns mixable across path-based and bytes-based sources.
+
+    HuggingFace infers `_images` from the first example, so a path-only corpus becomes
+    `List({bytes: null, path: string})` while a bytes corpus becomes
+    `List({bytes: binary, path: null})`. `interleave_datasets` then refuses to align them.
+    Recasting to `List(Image(decode=False))` keeps both representations and leaves decoding
+    to LlamaFactory's collator.
+    """
+    image_feature = List(Image(decode=False))
+    unified = []
+    for dataset in all_datasets:
+        resolve_features = getattr(dataset, "_resolve_features", None)
+        if callable(resolve_features):
+            dataset = resolve_features()
+
+        features = getattr(dataset, "features", None)
+        if features is not None and "_images" in features and not _is_null_feature(features["_images"]):
+            dataset = dataset.cast_column("_images", image_feature)
+
+        unified.append(dataset)
+
+    return unified
+
+
 def merge_dataset(
     all_datasets: list[Union["Dataset", "IterableDataset"]],
     data_args: "DataArguments",
@@ -58,7 +90,9 @@ def merge_dataset(
     if len(all_datasets) == 1:
         return all_datasets[0]
 
-    elif data_args.mix_strategy == "concat":
+    all_datasets = _unify_mm_features_for_mix(all_datasets)
+
+    if data_args.mix_strategy == "concat":
         if data_args.streaming:
             logger.warning_rank0_once("The samples between different datasets will not be mixed in streaming mode.")
 
@@ -75,7 +109,7 @@ def merge_dataset(
         }[data_args.mix_strategy]
 
         probabilities = data_args.eval_interleave_probs if is_eval else data_args.interleave_probs
-        
+
         return interleave_datasets(
             datasets=all_datasets,
             probabilities=probabilities,

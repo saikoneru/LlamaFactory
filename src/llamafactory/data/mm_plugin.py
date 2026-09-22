@@ -42,8 +42,14 @@ from ..extras.packages import is_pillow_available, is_pyav_available, is_transfo
 
 
 if is_pillow_available():
-    from PIL import Image
+    from PIL import Image, ImageFile
     from PIL.Image import Image as ImageObject
+
+    # Allow PIL to load truncated images (fills missing data with grey) instead
+    # of raising OSError.  This is critical for streaming training: HuggingFace
+    # ``datasets`` decodes images inside DataLoader workers *before* LlamaFactory
+    # can catch the error, so an unhandled OSError kills the whole run.
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 if is_pyav_available():
@@ -277,23 +283,26 @@ class MMPluginMixin:
             for image in images:
                 # PIL is lazy: for a path this is where the file is opened and, for a small
                 # file, fully read. For inline bytes there is no I/O at all here.
-                with nvtx_range("data/image_load"):
-                    if isinstance(image, (str, BinaryIO)):
-                        image = Image.open(image)
-                    elif isinstance(image, bytes):
-                        image = Image.open(BytesIO(image))
-                    elif isinstance(image, dict):
-                        if image["bytes"] is not None:
-                            image = Image.open(BytesIO(image["bytes"]))
-                        else:
-                            image = Image.open(image["path"])
+                try:
+                    with nvtx_range("data/image_load"):
+                        if isinstance(image, (str, BinaryIO)):
+                            image = Image.open(image)
+                        elif isinstance(image, bytes):
+                            image = Image.open(BytesIO(image))
+                        elif isinstance(image, dict):
+                            if image["bytes"] is not None:
+                                image = Image.open(BytesIO(image["bytes"]))
+                            else:
+                                image = Image.open(image["path"])
 
-                if not isinstance(image, ImageObject):
-                    raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
+                    if not isinstance(image, ImageObject):
+                        raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
 
-                # resize/convert forces the actual pixel decode
-                with nvtx_range("data/image_preprocess"):
-                    results.append(self._preprocess_image(image, **kwargs))
+                    # resize/convert forces the actual pixel decode
+                    with nvtx_range("data/image_preprocess"):
+                        results.append(self._preprocess_image(image, **kwargs))
+                except OSError as err:
+                    raise MediaDecodeError(f"Failed to decode image: {err}") from err
 
         return {"images": results}
 

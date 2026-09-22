@@ -33,6 +33,19 @@ export TMP="$CACHE_ROOT/tmp"
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
 export NCCL_ENABLE_C2C_GDR=0
 
+# wandb: API key is picked up from ~/.netrc (machine api.wandb.ai).
+# Keep run files on $SCRATCH so ~/.cache does not hit the home quota.
+mkdir -p "$CACHE_ROOT/wandb"
+export WANDB_DIR="$CACHE_ROOT/wandb"
+export WANDB_ENTITY="${WANDB_ENTITY:-DVPS-ai}"
+export WANDB_PROJECT="${WANDB_PROJECT:-GI-finetuning}"
+# Attach to the crashed GI run instead of opening a new W&B page.
+# Override with sbatch --export=ALL,WANDB_RUN_ID=... or unset WANDB_RUN_ID for a fresh run.
+if [[ "${CONFIG_PATH}" == *qwen_encoders_GI_all.yaml ]]; then
+  export WANDB_RUN_ID="${WANDB_RUN_ID:-yeubb6i0}"
+  export WANDB_RESUME="${WANDB_RESUME:-must}"
+fi
+
 export FORCE_TORCHRUN=1
 export NNODES=$SLURM_NNODES
 export NPROC_PER_NODE=$SLURM_GPUS_ON_NODE
