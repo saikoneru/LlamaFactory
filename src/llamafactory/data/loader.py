@@ -323,14 +323,22 @@ def get_dataset(
             eval_dict[key] = _get_preprocessed_dataset(
                 eval_dict[key], data_args, training_args, stage, template, tokenizer, processor, is_eval=True
             )
+            if data_args.max_eval_samples is not None:
+                cap = int(data_args.max_eval_samples)
+                dataset = eval_dict[key]
+                if hasattr(dataset, "take"):
+                    eval_dict[key] = dataset.take(cap)
+                else:
+                    eval_dict[key] = dataset.select(range(min(len(dataset), cap)))
+                logger.info_rank0(f"Capped {key} eval to {cap} samples.")
 
-        # Combine train and eval dictionaries
-        dataset_dict = DatasetDict({**train_dict, **eval_dict})
-
-        if data_args.tokenized_path is not None:  # save tokenized dataset to disk
+        combined = {**train_dict, **eval_dict}
+        if data_args.tokenized_path is not None:
+            dataset_dict = DatasetDict(combined)
             if training_args.should_save:
                 dataset_dict.save_to_disk(data_args.tokenized_path)
                 logger.info_rank0(f"Tokenized dataset is saved at {data_args.tokenized_path}.")
                 logger.info_rank0(f"Please launch the training with `tokenized_path: {data_args.tokenized_path}`.")
+            return get_dataset_module(dataset_dict)
 
-        return get_dataset_module(dataset_dict)
+        return get_dataset_module(combined)

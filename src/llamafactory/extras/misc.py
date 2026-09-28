@@ -16,8 +16,12 @@
 # limitations under the License.
 
 import gc
+import importlib
+import json
 import os
 import socket
+import sys
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal, Optional, Union
 
 import torch
@@ -52,6 +56,56 @@ if TYPE_CHECKING:
 
 
 logger = logging.get_logger(__name__)
+
+
+@contextmanager
+def compatible_dynamic_imports():
+    """Temporarily isolate a broken cluster importlib-metadata finder.
+
+    The TerraMind environment's backport registers MetadataPathFinder such that
+    ``invalidate_caches`` raises TypeError on the system Python used by
+    ML-bundle. Transformers invalidates caches before loading remote code.
+    """
+    removed = []
+    original_invalidate_caches = importlib.invalidate_caches
+
+    def safe_invalidate_caches():
+        try:
+            original_invalidate_caches()
+        except TypeError as error:
+            if "MetadataPathFinder.invalidate_caches" not in str(error):
+                raise
+
+    for index, finder in reversed(list(enumerate(sys.meta_path))):
+        finder_name = getattr(finder, "__name__", type(finder).__name__)
+        if finder_name == "MetadataPathFinder":
+            removed.append((index, finder))
+            sys.meta_path.pop(index)
+    importlib.invalidate_caches = safe_invalidate_caches
+    try:
+        yield
+    finally:
+        importlib.invalidate_caches = original_invalidate_caches
+        for index, finder in sorted(removed):
+            sys.meta_path.insert(index, finder)
+
+
+def attach_encoder_specs(processor: Any, model_path: str) -> Any:
+    """Recover ``encoder_specs`` from processor_config.json if AutoProcessor dropped them."""
+    if processor is None or getattr(processor, "encoder_specs", None):
+        return processor
+    config_path = os.path.join(model_path, "processor_config.json")
+    if not os.path.isfile(config_path):
+        return processor
+    try:
+        with open(config_path) as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return processor
+    specs = data.get("encoder_specs")
+    if specs:
+        setattr(processor, "encoder_specs", specs)
+    return processor
 
 
 class AverageMeter:

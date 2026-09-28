@@ -15,12 +15,18 @@
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Optional
-import inspect
 
+from ...extras.constants import IGNORE_INDEX, TERRAMIND_PLACEHOLDER
 from ...extras import logging
-from ...extras.constants import IGNORE_INDEX
 from .processor_utils import DatasetProcessor, greedy_knapsack, infer_seqlen
-from terramind_features import compute_num_placeholder_tokens
+from ..extra_encoders import (
+    get_encoder_specs,
+    has_encoder_payload,
+    incomplete_encoder_payloads,
+    prepare_encoder_messages,
+    row_encoder_samples,
+    unreadable_encoder_media,
+)
 
 if TYPE_CHECKING:
     from ..mm_plugin import AudioInput, ImageInput, VideoInput
@@ -48,41 +54,79 @@ class PackingParams:
     right_padding_length: int
 
 
-# def _substitute_terramind_marker(
-#     messages: list[dict[str, str]],
-#     terramind_s2l2a,
-#     placeholder_token: str,
-#     input_size: int,
-#     patch_size: int,
-# ) -> list[dict[str, str]]:
-#     """
-#     Replace TERRAMIND_PLACEHOLDER with N copies of the real placeholder
-#     token (if terramind_s2l2a is present for this example) or remove it
-#     entirely (if not) -- BEFORE tokenization, since this has to be text
-#     substitution, not token-id manipulation.
- 
-#     Because TerraMind's placeholder count is fixed (not resolution-
-#     dependent like native image tokens), this doesn't need the mm_plugin
-#     machinery -- a single compute_num_placeholder_tokens() call covers it.
-#     """
-#     if terramind_s2l2a is not None:
-#         n_tokens = compute_num_placeholder_tokens(
-#             ["S2L2A"], input_size, patch_size, concat_modalities_as_tokens=True
-#         )
-#         replacement = placeholder_token * n_tokens
-#     else:
-#         replacement = ""
- 
-#     new_messages = []
-#     for message in messages:
-#         content = message["content"]
-#         if TERRAMIND_PLACEHOLDER in content:
-#             content = content.replace(TERRAMIND_PLACEHOLDER, replacement)
-#         new_messages.append({**message, "content": content})
-#     return new_messages
- 
+
 @dataclass
 class SupervisedDatasetProcessor(DatasetProcessor):
+    def _row_encoder_samples(self, examples: dict[str, list[Any]], i: int) -> dict[str, Any]:
+        return row_encoder_samples(examples, i)
+
+    def _skip_incomplete_encoder_example(self, encoder_samples: dict[str, Any] | None) -> bool:
+        specs = get_encoder_specs(self.processor)
+        incomplete = incomplete_encoder_payloads(encoder_samples, specs)
+        if incomplete:
+            logger.warning_rank0_once(
+                "Skipping extra-encoder rows missing required inputs. "
+                f"First example: {incomplete}."
+            )
+            return True
+
+        unreadable = unreadable_encoder_media(encoder_samples, specs)
+        if unreadable:
+            logger.warning_rank0_once(
+                "Skipping extra-encoder rows whose media file is missing or empty. "
+                f"First example: {unreadable}."
+            )
+            return True
+
+        return False
+
+    def _prepare_terramind_messages(
+        self, messages: list[dict[str, str]], terramind: dict[str, Any] | None
+    ) -> list[dict[str, str]]:
+        messages = [dict(message) for message in messages]
+        marker_count = sum(message["content"].count(TERRAMIND_PLACEHOLDER) for message in messages)
+        modalities = [name for name, value in (terramind or {}).items() if value is not None]
+
+        if modalities:
+            if marker_count != 1:
+                raise ValueError(
+                    f"A TerraMind example must contain exactly one {TERRAMIND_PLACEHOLDER!r} marker, found {marker_count}."
+                )
+            if self.data_args.terramind_input_size % self.data_args.terramind_patch_size != 0:
+                raise ValueError("TerraMind input size must be divisible by patch size.")
+
+            token = self.data_args.terramind_token
+            if token not in self.tokenizer.get_vocab():
+                raise ValueError(
+                    f"TerraMind model token {token!r} is missing from the tokenizer. "
+                    "Load the tokenizer saved with the composite checkpoint."
+                )
+            patches = (self.data_args.terramind_input_size // self.data_args.terramind_patch_size) ** 2
+            num_tokens = patches * len(modalities)
+            replacement = token * num_tokens
+        else:
+            replacement = ""
+
+        for message in messages:
+            if TERRAMIND_PLACEHOLDER in message["content"]:
+                message["content"] = message["content"].replace(TERRAMIND_PLACEHOLDER, replacement)
+        return messages
+
+    def _prepare_encoder_messages(
+        self,
+        messages: list[dict[str, str]],
+        encoder_samples: dict[str, Any] | None,
+    ) -> list[dict[str, str]]:
+        specs = get_encoder_specs(self.processor)
+        messages = prepare_encoder_messages(
+            messages, encoder_samples or {}, specs, self.tokenizer
+        )
+        if specs:
+            return messages
+        return self._prepare_terramind_messages(
+            messages, (encoder_samples or {}).get("terramind")
+        )
+
     def _encode_data_example(
         self,
         prompt: list[dict[str, str]],
@@ -92,27 +136,15 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         images: list["ImageInput"],
         videos: list["VideoInput"],
         audios: list["AudioInput"],
-        terramind_s2l2a: Any = None,
+        encoder_samples: dict[str, Any] | None = None,
+        terramind: dict[str, Any] | None = None,
     ) -> tuple[list[int], list[int]]:
-
-        terramind = {"S2L2A": terramind_s2l2a} if terramind_s2l2a is not None else None
-
-        # Only pass `terramind` to plugins that declare it (e.g. Qwen2OmniTerraMindPlugin) —
-        # avoids breaking every other plugin's process_messages/process_token_ids signature.
-        process_messages_kwargs = {}
-        if "terramind" in inspect.signature(self.template.mm_plugin.process_messages).parameters:
-            process_messages_kwargs["terramind"] = terramind
-
-        messages = self.template.mm_plugin.process_messages(
-            prompt + response, images, videos, audios, self.processor, **process_messages_kwargs
-        )
-
-        process_token_ids_kwargs = {}
-        if "terramind" in inspect.signature(self.template.mm_plugin.process_token_ids).parameters:
-            process_token_ids_kwargs["terramind"] = terramind
-
+        if encoder_samples is None and terramind is not None:
+            encoder_samples = {"terramind": terramind}
+        messages = self._prepare_encoder_messages(prompt + response, encoder_samples)
+        messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
         input_ids, labels = self.template.mm_plugin.process_token_ids(
-            [], [], images, videos, audios, self.tokenizer, self.processor, **process_token_ids_kwargs
+            [], [], images, videos, audios, self.tokenizer, self.processor
         )
 
         discarding_history_cot = self.data_args.mask_history and not self.template.preserve_thinking
@@ -167,30 +199,35 @@ class SupervisedDatasetProcessor(DatasetProcessor):
                 )
                 continue
  
-            # FIX: this block was previously indented inside the `if` above,
-            # after `continue` -- unreachable for every example, meaning
-            # model_inputs never received anything for ANY sample, valid or
-            # not. Dedented to loop-body level, where it belongs.
-            terramind_s2l2a = examples.get("terramind_s2l2a", [None] * len(examples["_prompt"]))[i]
- 
-            input_ids, labels = self._encode_data_example(
-                prompt=examples["_prompt"][i],
-                response=examples["_response"][i],
-                system=examples["_system"][i],
-                tools=examples["_tools"][i],
-                images=examples["_images"][i] or [],
-                videos=examples["_videos"][i] or [],
-                audios=examples["_audios"][i] or [],
-                terramind_s2l2a=terramind_s2l2a,
-            )
- 
+            encoder_samples = self._row_encoder_samples(examples, i)
+            if self._skip_incomplete_encoder_example(encoder_samples):
+                continue
+            try:
+                input_ids, labels = self._encode_data_example(
+                    prompt=examples["_prompt"][i],
+                    response=examples["_response"][i],
+                    system=examples["_system"][i],
+                    tools=examples["_tools"][i],
+                    images=examples["_images"][i] or [],
+                    videos=examples["_videos"][i] or [],
+                    audios=examples["_audios"][i] or [],
+                    encoder_samples=encoder_samples,
+                )
+            except Exception as error:
+                logger.warning_rank0_once(
+                    "Dropped examples that failed media decode. "
+                    f"First example: {error}"
+                )
+                continue
+
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(labels)
             model_inputs["images"].append(examples["_images"][i])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
-            model_inputs["terramind_s2l2a"].append(terramind_s2l2a)
+            model_inputs["encoders"].append(encoder_samples)
+            model_inputs["terramind"].append(encoder_samples.get("terramind"))
  
         return model_inputs
 
@@ -219,15 +256,29 @@ class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
                 )
                 continue
 
-            input_ids, labels = self._encode_data_example(
-                prompt=examples["_prompt"][i],
-                response=examples["_response"][i],
-                system=examples["_system"][i],
-                tools=examples["_tools"][i],
-                images=examples["_images"][i] or [],
-                videos=examples["_videos"][i] or [],
-                audios=examples["_audios"][i] or [],
-            )
+            encoder_samples = self._row_encoder_samples(examples, i)
+            if self._skip_incomplete_encoder_example(encoder_samples):
+                continue
+            if has_encoder_payload(encoder_samples):
+                raise ValueError("Packing is not supported for extra-encoder examples. Set `packing: false`.")
+
+            try:
+                input_ids, labels = self._encode_data_example(
+                    prompt=examples["_prompt"][i],
+                    response=examples["_response"][i],
+                    system=examples["_system"][i],
+                    tools=examples["_tools"][i],
+                    images=examples["_images"][i] or [],
+                    videos=examples["_videos"][i] or [],
+                    audios=examples["_audios"][i] or [],
+                    encoder_samples=encoder_samples,
+                )
+            except Exception as error:
+                logger.warning_rank0_once(
+                    "Dropped examples that failed media decode. "
+                    f"First example: {error}"
+                )
+                continue
             length = len(input_ids)
             if length > self.data_args.cutoff_len:
                 logger.warning_rank0(f"Dropped lengthy example with length {length} > {self.data_args.cutoff_len}.")

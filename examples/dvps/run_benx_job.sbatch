@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=benx_lora_sft
+#SBATCH --job-name=unfreezetower
 #SBATCH --partition=plgrid-gpu-gh200
 #SBATCH --account=plggdvps01-gpu-gh200
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=119G
-#SBATCH --time=12:00:00
+#SBATCH --time=18:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 
@@ -30,7 +30,8 @@ echo "Architecture:   $(uname -m)"
 
 echo "===== LOADING ENVIRONMENT ====="
 module load ML-bundle/24.06a
-source /net/storage/pr3/plgrid/plggdvps/skoneru/envs/llama/bin/activate
+source /net/storage/pr3/plgrid/plggdvps/skoneru/envs/terramind_llama/bin/activate
 
 echo "===== LAUNCHING TRAINING ====="
-bash /net/home/plgrid/plgskoneru/LLaMA-Factory/examples/dvps/run_benx.sh
+export WANDB_PROJECT=DVPSFM_v1
+bash /net/home/plgrid/plgskoneru/LLaMA-Factory/examples/dvps/run_benx_unfreeze.sh

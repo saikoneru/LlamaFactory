@@ -13,11 +13,14 @@
 # limitations under the License.
 
 import json
+from collections import defaultdict
 from enum import StrEnum, unique
-from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, TypedDict, Union
 
 import fsspec
-from datasets import DatasetDict, concatenate_datasets, interleave_datasets
+import numpy as np
+import torch.utils.data
+from datasets import DatasetDict, concatenate_datasets
 
 from ..extras import logging
 
@@ -48,6 +51,122 @@ class DatasetModule(TypedDict):
     eval_dataset: Optional[Union["Dataset", "IterableDataset", dict[str, "Dataset"]]]
 
 
+class _PythonMix(torch.utils.data.IterableDataset):
+    """Iterable mix that never asks Arrow to type mixed extra-encoder rows.
+
+    Hugging Face ``interleave_datasets`` calls ``_resolve_features()``, which
+    tries to build a PyArrow table from a sample. MIMIC MedGemma values are
+    PIL JPEGs; BEN TerraMind values are nested arrays. Arrow cannot type that
+    mix, so we iterate Python dicts and implement the ``map`` used by the
+    LLaMA-Factory loader. Subclassing torch IterableDataset stops the Trainer
+    from using a length-based sampler.
+    """
+
+    def __init__(self, factory: Callable[[], Iterator[dict[str, Any]]]) -> None:
+        super().__init__()
+        self._factory = factory
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        worker = torch.utils.data.get_worker_info()
+        stream = self._factory()
+        if worker is None or worker.num_workers <= 1:
+            yield from stream
+            return
+        for index, example in enumerate(stream):
+            if index % worker.num_workers == worker.id:
+                yield example
+
+    def shuffle(self, buffer_size: int = 16384, seed: int | None = None):
+        def shuffled_factory() -> Iterator[dict[str, Any]]:
+            rng = np.random.default_rng(seed)
+            buffer: list[dict[str, Any]] = []
+            for example in self._factory():
+                buffer.append(example)
+                if len(buffer) >= buffer_size:
+                    index = int(rng.integers(0, len(buffer)))
+                    yield buffer.pop(index)
+            rng.shuffle(buffer)
+            yield from buffer
+
+        return _PythonMix(shuffled_factory)
+
+    def map(self, function, batched=True, batch_size=1000, remove_columns=None, **_kwargs):
+        remove = set(remove_columns or [])
+
+        def out_factory() -> Iterator[dict[str, Any]]:
+            if batched:
+                batch: dict[str, list[Any]] = defaultdict(list)
+                size = 0
+                for example in self._factory():
+                    for key, value in example.items():
+                        batch[key].append(value)
+                    size += 1
+                    if size >= batch_size:
+                        yield from _emit_batch(function(dict(batch)), remove)
+                        batch = defaultdict(list)
+                        size = 0
+                if size:
+                    yield from _emit_batch(function(dict(batch)), remove)
+                return
+            for example in self._factory():
+                mapped = function(example)
+                yield {key: value for key, value in mapped.items() if key not in remove}
+
+        return _PythonMix(out_factory)
+
+    def take(self, n: int):
+        def taken_factory() -> Iterator[dict[str, Any]]:
+            for index, example in enumerate(self._factory()):
+                if index >= n:
+                    return
+                yield example
+
+        return _PythonMix(taken_factory)
+
+
+def _emit_batch(output: dict[str, list[Any]], remove: set[str]) -> Iterator[dict[str, Any]]:
+    keys = [key for key in output if key not in remove]
+    if not keys:
+        return
+    length = len(output[keys[0]])
+    for index in range(length):
+        yield {key: output[key][index] for key in keys}
+
+
+def _iter_interleave(
+    datasets: list[Any],
+    probabilities: list[float] | None,
+    seed: int,
+    stopping_strategy: str,
+) -> Iterator[dict[str, Any]]:
+    count = len(datasets)
+    weights = np.array(probabilities if probabilities is not None else [1.0 / count] * count, dtype=float)
+    rng = np.random.default_rng(seed)
+    iterators = [iter(dataset) for dataset in datasets]
+    alive = [True] * count
+    restart = stopping_strategy != "first_exhausted"
+    while True:
+        candidates = [index for index, is_alive in enumerate(alive) if is_alive]
+        if not candidates:
+            return
+        if not restart and len(candidates) < count:
+            return
+        local = weights[candidates]
+        local = local / local.sum()
+        picked = int(candidates[int(rng.choice(len(candidates), p=local))])
+        try:
+            yield next(iterators[picked])
+        except StopIteration:
+            if not restart:
+                alive[picked] = False
+                continue
+            iterators[picked] = iter(datasets[picked])
+            try:
+                yield next(iterators[picked])
+            except StopIteration:
+                alive[picked] = False
+
+
 def merge_dataset(
     all_datasets: list[Union["Dataset", "IterableDataset"]], data_args: "DataArguments", seed: int
 ) -> Union["Dataset", "IterableDataset"]:
@@ -55,13 +174,13 @@ def merge_dataset(
     if len(all_datasets) == 1:
         return all_datasets[0]
 
-    elif data_args.mix_strategy == "concat":
+    if data_args.mix_strategy == "concat":
         if data_args.streaming:
             logger.warning_rank0_once("The samples between different datasets will not be mixed in streaming mode.")
 
         return concatenate_datasets(all_datasets)
 
-    elif data_args.mix_strategy.startswith("interleave"):
+    if data_args.mix_strategy.startswith("interleave"):
         if not data_args.streaming:
             logger.warning_rank0_once("We recommend using `mix_strategy=concat` in non-streaming mode.")
 
@@ -70,16 +189,20 @@ def merge_dataset(
             "interleave_over": "all_exhausted",
             "interleave_once": "all_exhausted_without_replacement",
         }[data_args.mix_strategy]
-
-        return interleave_datasets(
-            datasets=all_datasets,
-            probabilities=data_args.interleave_probs,
-            seed=seed,
-            stopping_strategy=strategy_map,  # type: ignore
+        logger.info_rank0(
+            "Interleaving datasets in Python so mixed extra-encoder rows "
+            "are not forced through PyArrow feature inference."
+        )
+        return _PythonMix(
+            lambda: _iter_interleave(
+                all_datasets,
+                data_args.interleave_probs,
+                seed,
+                strategy_map,
+            )
         )
 
-    else:
-        raise ValueError(f"Unknown mixing strategy: {data_args.mix_strategy}.")
+    raise ValueError(f"Unknown mixing strategy: {data_args.mix_strategy}.")
 
 
 def split_dataset(
@@ -131,10 +254,12 @@ def split_dataset(
     return train_dict, eval_dict
 
 
-def get_dataset_module(dataset: Union["Dataset", "DatasetDict"]) -> "DatasetModule":
+def get_dataset_module(dataset: Union["Dataset", "DatasetDict", dict]) -> "DatasetModule":
     r"""Convert dataset or dataset dict to dataset module."""
     dataset_module: DatasetModule = {}
-    if isinstance(dataset, DatasetDict):  # dataset dict
+    if isinstance(dataset, DatasetDict) or (
+        isinstance(dataset, dict) and any(key in dataset for key in ("train", "validation"))
+    ):
         if "train" in dataset:
             dataset_module["train_dataset"] = dataset["train"]
 

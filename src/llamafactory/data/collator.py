@@ -3,7 +3,7 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 
-import copy, inspect
+import copy, inspect, logging, os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
@@ -15,6 +15,15 @@ from transformers import DataCollatorForSeq2Seq
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, MROPE_MODELS
 from ..extras.packages import is_pillow_available
+from .extra_encoders import (
+    OMNI_MODEL_TYPES,
+    cast_encoder_inputs,
+    get_encoder_specs,
+    pop_encoder_samples,
+    samples_by_encoder_name,
+)
+
+import io
 
 if is_pillow_available():
     from PIL import Image
@@ -109,6 +118,16 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
     # RoPE
     # =================================================================
 
+    _rope_logger = logging.getLogger(__name__ + ".rope_fallback")
+
+    @staticmethod
+    def _fallback_rope_position_ids(features: dict[str, "torch.Tensor"]) -> None:
+        """Flat 3-axis positional encoding fallback when get_rope_index fails."""
+        bsz, seq_len = features["input_ids"].shape
+        pos = torch.arange(seq_len, device=features["input_ids"].device)
+        features["position_ids"] = pos.unsqueeze(0).unsqueeze(0).expand(3, bsz, seq_len).contiguous()
+        features["rope_deltas"] = torch.zeros(bsz, 1, device=features["input_ids"].device, dtype=torch.long)
+
     def _compute_rope_position_ids(self, features: dict[str, "torch.Tensor"], mm_inputs: dict[str, Any]) -> None:
         rope_index_kwargs = {
             "input_ids": features["input_ids"],
@@ -141,16 +160,25 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             rope_index_kwargs["second_per_grids"] = mm_inputs.get("video_second_per_grid")
 
         model_type = getattr(self.model.config, "model_type", None)
-        if model_type in ["qwen2_5_omni_thinker", "qwen3_omni_moe_thinker"]:
+        if model_type in OMNI_MODEL_TYPES:
             rope_index_kwargs["use_audio_in_video"] = getattr(self.processor, "use_audio_in_video", False)
             feature_attention_mask = mm_inputs.get("feature_attention_mask", None)
             if feature_attention_mask is not None:
                 audio_feature_lengths = torch.sum(feature_attention_mask, dim=1)
                 rope_index_kwargs["audio_seqlens"] = audio_feature_lengths
-            features["position_ids"], rope_deltas = self.get_rope_func(**rope_index_kwargs)
+            try:
+                features["position_ids"], rope_deltas = self.get_rope_func(**rope_index_kwargs)
+            except (IndexError, RuntimeError) as e:
+                self._rope_logger.warning("get_rope_index mismatch (omni), fallback: %s", e)
+                self._fallback_rope_position_ids(features)
+                return
             features["rope_deltas"] = rope_deltas - (1 - rope_index_kwargs["attention_mask"]).sum(dim=-1).unsqueeze(-1)
         else:
-            features["position_ids"], features["rope_deltas"] = self.get_rope_func(**rope_index_kwargs)
+            try:
+                features["position_ids"], features["rope_deltas"] = self.get_rope_func(**rope_index_kwargs)
+            except (IndexError, RuntimeError) as e:
+                self._rope_logger.warning("get_rope_index mismatch, fallback: %s", e)
+                self._fallback_rope_position_ids(features)
 
     # =================================================================
     # Packed RoPE
@@ -237,74 +265,132 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
     @staticmethod
     def _normalize_terramind_value(value):
-        """Normalize one TerraMind sample into a tensor. None means this sample has no TerraMind input."""
-        if value is None: return None
-        if torch.is_tensor(value): return value.detach().cpu().float()
-        if isinstance(value, np.ndarray): return torch.from_numpy(value).float()
-        if isinstance(value, bytes):
-            shape = (12, 120, 120)
-            array = np.frombuffer(value, dtype=np.float32)
-            expected_numel = int(np.prod(shape))
-            if array.size != expected_numel:
-                raise ValueError(f"Invalid TerraMind S2L2A byte payload: got {array.size} float32 values, expected {expected_numel}.")
-            return torch.from_numpy(array.reshape(shape).copy()).float()
-        return torch.as_tensor(value, dtype=torch.float32)
+        if value is None:
+            return None
+        if torch.is_tensor(value):
+            tensor = value.detach().cpu()
+        elif isinstance(value, np.ndarray):
+            tensor = torch.from_numpy(value)
+        elif isinstance(value, bytes):
+            with np.load(io.BytesIO(value)) as archive:
+                if "data" not in archive:
+                    raise ValueError("TerraMind NPZ payload must contain a 'data' array.")
+                tensor = torch.from_numpy(np.asarray(archive["data"], dtype=np.float32).copy())
+        elif isinstance(value, str):
+            if not os.path.isfile(value):
+                raise FileNotFoundError(f"TerraMind input file not found: {value}")
+            if value.endswith(".npy"):
+                tensor = torch.from_numpy(np.load(value))
+            elif value.endswith(".npz"):
+                with np.load(value) as archive:
+                    if "data" in archive:
+                        array = archive["data"]
+                    elif len(archive.files) == 1:
+                        array = archive[archive.files[0]]
+                    else:
+                        raise ValueError(f"TerraMind .npz file must contain a 'data' array or exactly one array: {value}")
+                    tensor = torch.from_numpy(np.asarray(array, dtype=np.float32).copy())
+            elif value.endswith((".pt", ".pth")):
+                tensor = torch.load(value, map_location="cpu", weights_only=True)
+                if not torch.is_tensor(tensor):
+                    raise TypeError(f"TerraMind torch file must contain a tensor: {value}")
+            else:
+                raise ValueError(f"Unsupported TerraMind file type: {value}")
+        else:
+            tensor = torch.as_tensor(value)
+
+        if tensor.ndim == 4 and tensor.shape[0] == 1:
+            tensor = tensor.squeeze(0)
+        if tensor.ndim != 3:
+            raise ValueError(f"TerraMind modality tensor must have shape [C,H,W], got {tuple(tensor.shape)}.")
+        return tensor.float()
 
     @classmethod
     def _extract_terramind_sample(cls, feature):
-        """Return a per-example TerraMind dictionary.
-        Supported: {"terramind": {"S2L2A": tensor}} and legacy {"terramind_s2l2a": tensor}
-        """
         terramind = feature.pop("terramind", None)
-        legacy_s2l2a = feature.pop("terramind_s2l2a", None)
-        if terramind is not None:
-            if not isinstance(terramind, dict):
-                raise TypeError("'terramind' must be a dict mapping modality names to values.")
-            result = {modality: cls._normalize_terramind_value(value) for modality, value in terramind.items() if value is not None}
-            return result if result else None
-        if legacy_s2l2a is not None:
-            return {"S2L2A": cls._normalize_terramind_value(legacy_s2l2a)}
-        return None
+        if terramind is None:
+            return None
+        if not isinstance(terramind, dict):
+            raise TypeError("'terramind' must be a dict mapping modality names to values.")
+        result = {
+            modality: cls._normalize_terramind_value(value)
+            for modality, value in terramind.items()
+            if value is not None
+        }
+        return result or None
 
     @staticmethod
-    def _stack_optional_terramind_values(values, valid_indices):
-        """Stack values belonging only to examples that actually contain a given TerraMind modality. All selected examples must have the same shape."""
-        selected = []
-        for idx in valid_indices:
-            value = values[idx]
-            if value is None:
-                raise ValueError("Inconsistent TerraMind modality presence inside a batch of valid TerraMind examples.")
-            if not torch.is_tensor(value):
-                value = torch.as_tensor(value, dtype=torch.float32)
-            selected.append(value.float())
-        if not selected: return None
-        try:
-            return torch.stack(selected, dim=0)
-        except RuntimeError as exc:
-            shapes = [tuple(x.shape) for x in selected]
-            raise ValueError(f"TerraMind samples for the same modality must have the same shape before batching. Got shapes: {shapes}") from exc
+    def _build_terramind_batch(samples):
+        present = [sample for sample in samples if sample]
+        if not present:
+            return None
 
-    def _build_terramind_batch(self, terramind_samples):
-        """Convert list of per-sample dicts/None into terramind_mask + terramind_inputs (only valid samples)."""
-        batch_size = len(terramind_samples)
-        terramind_mask = torch.tensor([sample is not None and len(sample) > 0 for sample in terramind_samples], dtype=torch.bool)
-        valid_indices = [i for i, sample in enumerate(terramind_samples) if sample is not None and len(sample) > 0]
-        if not valid_indices: return terramind_mask, {}
-
-        modality_names = set()
-        for idx in valid_indices: modality_names.update(terramind_samples[idx].keys())
-
-        terramind_inputs = {}
-        for modality in sorted(modality_names):
-            values = [terramind_samples[idx].get(modality) for idx in valid_indices]
-            # If a modality is present for any TerraMind example, it must be present for all of them.
-            if any(value is None for value in values):
+        modalities = set(present[0])
+        for sample in present[1:]:
+            if set(sample) != modalities:
                 raise ValueError(
-                    f"TerraMind modality {modality!r} is present for only some TerraMind examples in the batch. "
-                    "Either provide the modality for every example that has TerraMind, or split the batch."
+                    "All TerraMind examples in the same batch must contain the same modality set."
                 )
-            terramind_inputs[modality] = torch.stack([value.float() for value in values], dim=0)
-        return terramind_mask, terramind_inputs
+
+        output = {}
+        for modality in sorted(modalities):
+            values = [sample[modality] for sample in present]
+            try:
+                output[modality] = torch.stack(values, dim=0)
+            except RuntimeError as exc:
+                shapes = [tuple(value.shape) for value in values]
+                raise ValueError(
+                    f"TerraMind modality {modality!r} must have one consistent shape per batch; got {shapes}."
+                ) from exc
+        return output
+
+    def _collate_extra_encoders(self, batch_samples):
+        r"""Build ``encoder_inputs`` from processor specs, with a TerraMind fallback."""
+        specs = get_encoder_specs(self.processor, self.model)
+        model_type = getattr(getattr(self.model, "config", None), "model_type", None)
+        use_generic = bool(specs) and hasattr(self.processor, "_collate_encoder_inputs")
+
+        encoder_inputs = None
+        terramind_pixel_values = None
+        if use_generic:
+            grouped = samples_by_encoder_name(batch_samples, specs)
+            encoder_inputs = self.processor._collate_encoder_inputs(grouped) or None
+            if model_type == "qwen2_5_omni_terramind" and encoder_inputs:
+                terramind = encoder_inputs.get("terramind")
+                if terramind is not None:
+                    terramind_pixel_values = (
+                        terramind["inputs"]
+                        if isinstance(terramind, dict) and "inputs" in terramind
+                        else terramind
+                    )
+        else:
+            extra_names = {
+                name
+                for sample in batch_samples
+                for name, value in (sample or {}).items()
+                if value is not None and name != "terramind"
+            }
+            if extra_names:
+                raise ValueError(
+                    "Batch has extra encoder columns "
+                    f"{sorted(extra_names)} but the processor has no "
+                    "encoder_specs/_collate_encoder_inputs. Load the composite "
+                    "checkpoint with trust_remote_code."
+                )
+            terramind_samples = []
+            for sample in batch_samples:
+                terramind = (sample or {}).get("terramind")
+                if terramind is None:
+                    terramind_samples.append(None)
+                else:
+                    terramind_samples.append(self._extract_terramind_sample({"terramind": terramind}))
+            terramind_pixel_values = self._build_terramind_batch(terramind_samples)
+
+        if model_type == "qwen2_5_omni_terramind":
+            return encoder_inputs, terramind_pixel_values
+        if model_type == "qwen2_5_omni_composite" or use_generic:
+            return encoder_inputs, None
+        return None, terramind_pixel_values
 
     # =================================================================
     # Main collator
@@ -314,16 +400,22 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         model_type = getattr(getattr(self.model, "config", None), "model_type", None)
         is_moss_vl = model_type == "moss_vl"
 
+        # Accelerate's IterableDatasetShard pads the final batch of a streaming epoch by recycling
+        # sample dicts it already yielded. Popping keys below would strip "images"/"videos"/"audios"
+        # from those shared dicts, so a recycled sample would keep its mm placeholder tokens while
+        # losing its media. Work on copies to keep the caller's dicts intact.
+        features = [dict(feature) for feature in features]
+
         batch_images, batch_videos, batch_audios = [], [], []
         batch_imglens, batch_vidlens, batch_audlens, batch_input_ids = [], [], [], []
         packing_params_list = []
-        terramind_samples = []
+        batch_encoder_samples = []
 
         for feature in features:
             images = feature.pop("images", None) or []
             videos = feature.pop("videos", None) or []
             audios = feature.pop("audios", None) or []
-            terramind_samples.append(self._extract_terramind_sample(feature))
+            batch_encoder_samples.append(pop_encoder_samples(feature))
             batch_images.extend(images)
             batch_videos.extend(videos)
             batch_audios.extend(audios)
@@ -333,7 +425,9 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             batch_input_ids.append(feature["input_ids"])
             packing_params_list.append(feature.pop("packing_params", None))
 
-        terramind_mask, terramind_inputs = self._build_terramind_batch(terramind_samples)
+        encoder_inputs, terramind_pixel_values = self._collate_extra_encoders(
+            batch_encoder_samples
+        )
 
         # Fake image for text-only Qwen examples.
         fake_input_ids = []
@@ -402,15 +496,15 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         # Standard text padding.
         features = super().__call__(features)
 
-        # TerraMind (attach after HF padding)
-        features["terramind_mask"] = terramind_mask
-        if terramind_inputs:
-            features["terramind_inputs"] = terramind_inputs
-        if "S2L2A" in terramind_inputs:
-            features["terramind_s2l2a"] = terramind_inputs["S2L2A"]
+        # Extra encoders: generic ``encoder_inputs`` for the composite; legacy
+        # ``terramind_pixel_values`` only for the old TerraMind wrapper.
+        if encoder_inputs:
+            features["encoder_inputs"] = encoder_inputs
+        if terramind_pixel_values is not None:
+            features["terramind_pixel_values"] = terramind_pixel_values
 
         bsz, seq_len = features["input_ids"].shape[:2]
-        is_omni = model_type in ["qwen2_5_omni_thinker", "qwen3_omni_moe_thinker"]
+        is_omni = model_type in OMNI_MODEL_TYPES
 
         # RoPE
         if self.get_rope_func is not None:
@@ -506,18 +600,14 @@ class SFTDataCollatorWith4DAttentionMask(MultiModalDataCollatorForSeq2Seq):
                 self._unpad_packed_features(features)
             features["attention_mask"] = None
 
-        # TerraMind tensors are intentionally kept as model inputs. terramind_mask is boolean and is not cast.
         for key, value in features.items():
-            if key == "terramind_mask": continue
-            if key == "terramind_inputs":
-                if isinstance(value, dict):
-                    for modality, tensor in value.items():
-                        if torch.is_tensor(tensor) and torch.is_floating_point(tensor):
-                            value[modality] = tensor.to(self.compute_dtype)
+            if key in {"encoder_inputs", "kl_encoder_inputs"}:
+                features[key] = cast_encoder_inputs(value, self.compute_dtype)
                 continue
-            if key == "terramind_s2l2a":
-                if torch.is_tensor(value) and torch.is_floating_point(value):
-                    features[key] = value.to(self.compute_dtype)
+            if key == "terramind_pixel_values" and isinstance(value, dict):
+                for modality, tensor in value.items():
+                    if torch.is_tensor(tensor) and torch.is_floating_point(tensor):
+                        value[modality] = tensor.to(self.compute_dtype)
                 continue
             if torch.is_tensor(value) and torch.is_floating_point(value):
                 features[key] = value.to(self.compute_dtype)
@@ -541,8 +631,8 @@ class PairwiseDataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
                     "images": feature.get("images", []),
                     "videos": feature.get("videos", []),
                     "audios": feature.get("audios", []),
-                    "terramind": feature.get("terramind", None),
-                    "terramind_s2l2a": feature.get("terramind_s2l2a", None),
+                    "encoders": feature.get("encoders")
+                    or ({"terramind": feature["terramind"]} if feature.get("terramind") is not None else {}),
                 }
                 concatenated_features.append(target_feature)
         return super().__call__(concatenated_features)
@@ -564,8 +654,8 @@ class KTODataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
                 "images": feature.get("images", []),
                 "videos": feature.get("videos", []),
                 "audios": feature.get("audios", []),
-                "terramind": feature.get("terramind", None),
-                "terramind_s2l2a": feature.get("terramind_s2l2a", None),
+                "encoders": feature.get("encoders")
+                or ({"terramind": feature["terramind"]} if feature.get("terramind") is not None else {}),
             }
             kl_feature = {
                 "input_ids": feature["kl_input_ids"],
@@ -574,8 +664,8 @@ class KTODataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
                 "images": feature.get("images", []),
                 "videos": feature.get("videos", []),
                 "audios": feature.get("audios", []),
-                "terramind": feature.get("terramind", None),
-                "terramind_s2l2a": feature.get("terramind_s2l2a", None),
+                "encoders": feature.get("encoders")
+                or ({"terramind": feature["terramind"]} if feature.get("terramind") is not None else {}),
             }
             target_features.append(target_feature)
             kl_features.append(kl_feature)
@@ -591,9 +681,9 @@ class KTODataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
             batch["kl_cross_attention_mask"] = kl_batch["cross_attention_mask"]
         if "token_type_ids" in kl_batch:
             batch["kl_token_type_ids"] = kl_batch["token_type_ids"]
-        if "terramind_mask" in kl_batch:
-            batch["kl_terramind_mask"] = kl_batch["terramind_mask"]
-        if "terramind_inputs" in kl_batch:
-            batch["kl_terramind_inputs"] = kl_batch["terramind_inputs"]
+        if "terramind_pixel_values" in kl_batch:
+            batch["kl_terramind_pixel_values"] = kl_batch["terramind_pixel_values"]
+        if "encoder_inputs" in kl_batch:
+            batch["kl_encoder_inputs"] = kl_batch["encoder_inputs"]
         batch["kto_tags"] = torch.tensor(kto_tags)
         return batch

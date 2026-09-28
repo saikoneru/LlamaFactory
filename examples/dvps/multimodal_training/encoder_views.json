@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_four/config.json",
+  "output_root": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training",
+  "routes": {
+    "qwen_vision": {
+      "encoder": "qwen_native_vision",
+      "native": true,
+      "marker": "<image>",
+      "column": "images"
+    },
+    "terramind": {
+      "encoder": "terramind",
+      "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_s1s2/config.json",
+      "marker": "<terramind>",
+      "column": "terramind",
+      "required_modalities": [
+        "S1GRD",
+        "S2L2A"
+      ],
+      "min_modalities": 1
+    },
+    "omniavsr_audio": {
+      "encoder": "omniavsr_audio",
+      "marker": "<omniavsr_audio>",
+      "column": "omniavsr_audio"
+    },
+    "omniavsr_video": {
+      "encoder": "omniavsr_video",
+      "marker": "<omniavsr_video>",
+      "column": "omniavsr_video"
+    }
+  },
+  "datasets": {
+    "BigEarthNet.txt": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "terramind",
+          "source_column": "terramind",
+          "fallback_markers": [
+            "<image>"
+          ]
+        }
+      ],
+      "remove_markers": [
+        "<image>"
+      ],
+      "drop_columns": [
+        "images"
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win_multimodal/train.parquet",
+          "output": "BigEarthNet.txt/train.parquet"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win_multimodal/val.parquet",
+          "output": "BigEarthNet.txt/val.parquet"
+        },
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_multimodal_test/train.parquet",
+          "output": "BigEarthNet.txt/test.parquet"
+        }
+      }
+    },
+    "lipcrops_180hours": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "omniavsr_audio",
+          "source_column": "audios",
+          "fallback_markers": [
+            "<audio>"
+          ]
+        },
+        {
+          "route": "omniavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
+          "output": "lipcrops_180hours/train.parquet"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
+          "output": "lipcrops_180hours/val.parquet"
+        },
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+          "output": "lipcrops_180hours/eval.parquet"
+        }
+      }
+    },
+    "RSTeller": {
+      "mode": "symlink",
+      "routes": [
+        {
+          "route": "qwen_vision",
+          "source_column": "images"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSTeller/sharegpt/train",
+          "pattern": "*.parquet",
+          "output": "RSTeller/train"
+        },
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSTeller/sharegpt/eval",
+          "pattern": "*.parquet",
+          "output": "RSTeller/eval"
+        }
+      }
+    },
+    "GeoChat_Instruct": {
+      "mode": "symlink",
+      "routes": [
+        {
+          "route": "qwen_vision",
+          "source_column": "images"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/train",
+          "pattern": "*.parquet",
+          "output": "GeoChat_Instruct/train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/val",
+          "pattern": "*.parquet",
+          "output": "GeoChat_Instruct/val"
+        }
+      }
+    }
+  }
+}

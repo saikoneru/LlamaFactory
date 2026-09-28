@@ -179,9 +179,14 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         else:
             labels = inputs.get("labels")
 
-        loss, generated_tokens, _ = super().prediction_step(
-            model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys, **gen_kwargs
-        )
+        try:
+            loss, generated_tokens, _ = super().prediction_step(
+                model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys, **gen_kwargs
+            )
+        except torch.cuda.OutOfMemoryError:
+            torch.cuda.empty_cache()
+            logger.warning_rank0_once("Skipped eval batch that ran out of GPU memory.")
+            return None, None, labels
         if generated_tokens is not None and self.args.predict_with_generate:
             generated_tokens[:, : inputs["input_ids"].size(-1)] = self.processing_class.pad_token_id
             generated_tokens = generated_tokens.contiguous()

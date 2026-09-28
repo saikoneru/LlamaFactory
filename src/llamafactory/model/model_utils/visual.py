@@ -380,6 +380,35 @@ _register_composite_model(
 
 
 _register_composite_model(
+    model_type="qwen2_5_omni_composite",
+    projector_keys=["projectors"],
+    vision_model_keys=[
+        "encoders",
+        "qwen.thinker.visual.patch_embed",
+        "qwen.thinker.visual.blocks",
+        "qwen.thinker.audio_tower",
+    ],
+    language_model_keys=["qwen.thinker.model", "qwen.thinker.lm_head"],
+    lora_conflict_keys=["patch_embed"],
+)
+
+
+_register_composite_model(
+    model_type="qwen2_5_omni_terramind",
+    projector_keys=["projector", "projectors"],
+    vision_model_keys=[
+        "terramind",
+        "encoders",
+        "qwen.thinker.visual.patch_embed",
+        "qwen.thinker.visual.blocks",
+        "qwen.thinker.audio_tower",
+    ],
+    language_model_keys=["qwen.thinker.model", "qwen.thinker.lm_head"],
+    lora_conflict_keys=["patch_embed"],
+)
+
+
+_register_composite_model(
     model_type="qwen2_vl",
     projector_keys=["visual.merger"],
     vision_model_keys=["visual.patch_embed", "visual.blocks"],

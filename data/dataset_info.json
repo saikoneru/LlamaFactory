@@ -1,11 +1,438 @@
 {
+  "dvps_smoke_mixed": {
+    "file_name": "dvps_smoke_mixed/train.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images",
+      "terramind": "terramind",
+      "medgemma": "medgemma"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_bentxt_terramind_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/BigEarthNet.txt/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_bentxt_terramind_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/BigEarthNet.txt/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_bentxt_terramind_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/BigEarthNet.txt/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_omniavsr_av_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "omniavsr_audio": "omniavsr_audio",
+      "omniavsr_video": "omniavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_omniavsr_av_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "omniavsr_audio": "omniavsr_audio",
+      "omniavsr_video": "omniavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_omniavsr_av_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "omniavsr_audio": "omniavsr_audio",
+      "omniavsr_video": "omniavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_rsteller_qwen_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/RSTeller/train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_rsteller_qwen_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/RSTeller/eval",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_geochat_qwen_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/GeoChat_Instruct/train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_geochat_qwen_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/GeoChat_Instruct/val",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mimic_cxr_medgemma_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/MIMIC-CXR/medgemma/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "medgemma": "medgemma"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mimic_cxr_medgemma_validation": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/MIMIC-CXR/medgemma/validation.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "medgemma": "medgemma"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mimic_cxr_medgemma_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/MIMIC-CXR/medgemma/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "medgemma": "medgemma"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_bench": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/bench.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_omnirgb_bench": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/bench.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_omnirgb_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_omnirgb_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_omnirgb_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_omnirgb_bench": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/bench.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_omnirgb_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_omnirgb_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_terramindl2_omnirgb_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_multimodal_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win_multimodal/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "benx_multimodal_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win_multimodal/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
   "benx_multimodal_test": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_multimodal_test/train.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
       "images": "images",
-      "terramind_s2l2a": "terramind_s2l2a"
+      "terramind": "terramind"
     },
     "tags": {
       "role_tag": "role",
@@ -16,7 +443,7 @@
     }
   },
   "benx_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_all/train.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/train.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -31,7 +458,7 @@
     }
   },
   "benx_val": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_all/val.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/val.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -46,7 +473,7 @@
     }
   },
   "benx_test": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_all/test.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/test.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -61,7 +488,7 @@
     }
   },
   "benx_bench": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_all/bench.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_por_sum_win/bench.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -76,11 +503,11 @@
     }
   },
   "dev_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/dev.v1.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/dev.v1.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -91,11 +518,11 @@
     }
   },
   "train_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/train.v1.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/train.v1.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -106,10 +533,10 @@
     }
   },
   "simple_dev_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/dev.v1.simple.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/dev.v1.simple.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages"
+      "messages": "messages"
     },
     "tags": {
       "system_tag": "system",
@@ -120,10 +547,10 @@
     }
   },
   "simple_train_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/train.v1.simple.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/train.v1.simple.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages"
+      "messages": "messages"
     },
     "tags": {
       "system_tag": "system",
@@ -134,11 +561,11 @@
     }
   },
   "st_dev_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/dev.v1.st.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/dev.v1.st.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -149,11 +576,11 @@
     }
   },
   "st_train_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/train.v1.st.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/train.v1.st.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -164,11 +591,11 @@
     }
   },
   "asr_dev_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/dev.v1.asr.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/dev.v1.asr.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -179,11 +606,11 @@
     }
   },
   "asr_train_v1": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/train.v1.asr.json",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/v1/train.v1.asr.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "audios": "audios"
+      "messages": "messages",
+      "audios": "audios"
     },
     "tags": {
       "system_tag": "system",
@@ -197,8 +624,8 @@
     "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/tutor/CIMA/train.parsed.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "images": "images"
+      "messages": "messages",
+      "images": "images"
     },
     "tags": {
       "system_tag": "system",
@@ -212,8 +639,8 @@
     "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/tutor/CIMA/dev.parsed.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages",
-    "images": "images"
+      "messages": "messages",
+      "images": "images"
     },
     "tags": {
       "system_tag": "system",
@@ -227,7 +654,7 @@
     "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/tutor/mathdial/data/train.parsed.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages"
+      "messages": "messages"
     },
     "tags": {
       "system_tag": "system",
@@ -241,7 +668,7 @@
     "file_name": "/net/storage/pr3/plgrid/plggdvps/skoneru/data/tutor/mathdial/data/dev.parsed.json",
     "formatting": "sharegpt",
     "columns": {
-    "messages": "messages"
+      "messages": "messages"
     },
     "tags": {
       "system_tag": "system",
@@ -966,5 +1393,266 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "lipcrops_180hours_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_av_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_av_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_av_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "lipread": "lipread"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_audio_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/audio_eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_av_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/av_train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_av_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/av_val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_av_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/av_eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios",
+      "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_audio_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/audio_eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lnqa_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lnqa_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lnqa_test": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/test.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
   }
 }

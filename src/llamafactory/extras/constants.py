@@ -109,6 +109,7 @@ MROPE_MODELS = {
     "qwen3_5",
     "qwen3_5_moe",
     "qwen2_5_omni_terramind",
+    "qwen2_5_omni_composite",
 }
 
 MULTIMODAL_SUPPORTED_MODELS = set()
