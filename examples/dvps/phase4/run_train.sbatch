@@ -40,7 +40,7 @@ export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_MODULES_CACHE="${HF_HOME}/job_modules/${SLURM_JOB_ID}"
 export HF_DATASETS_CACHE="${HF_HOME}/job_datasets/${SLURM_JOB_ID}"
 export WANDB_ENTITY=DVPS-ai
-export WANDB_PROJECT=CD-finetuning
+export WANDB_PROJECT=GI-finetuning
 if [[ -f "${HOME}/.wandb_api_key" ]]; then
   export WANDB_API_KEY="$(cat "${HOME}/.wandb_api_key")"
 fi

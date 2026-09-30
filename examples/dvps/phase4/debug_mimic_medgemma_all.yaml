@@ -1,0 +1,55 @@
+### 4-step sanity for the MedGemma CD-all mix. Batches mix one- and two-ECG
+### rows (debug_smoke_mixed.parquet alternates them), so the multi-payload
+### marker expansion, collation, and scatter all run. Not a paper run.
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_medgemma
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: ecg_qa_medgemma_smoke, mimic_cxr_medgemma_train
+mix_strategy: interleave_over
+interleave_probs: [0.5, 0.5]
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 8
+preprocessing_batch_size: 8
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+max_steps: 4
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/debug_mimic_medgemma_all
+logging_steps: 1
+save_steps: 4
+save_total_limit: 1
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.0
+bf16: true
+ddp_timeout: 180000000
