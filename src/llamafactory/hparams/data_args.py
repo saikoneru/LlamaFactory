@@ -39,6 +39,15 @@ class DataArguments:
         default="data",
         metadata={"help": "Path to the folder containing the datasets."},
     )
+    dataset_info: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Path to a dataset info JSON file. Defaults to `<dataset_dir>/dataset_info.json`. "
+                "Use this to load a non-default file such as `data/dataset_info_0.json`."
+            )
+        },
+    )
     media_dir: str | None = field(
         default=None,
         metadata={"help": "Path to the folder containing the images, videos or audios. Defaults to `dataset_dir`."},
@@ -72,6 +81,10 @@ class DataArguments:
     interleave_probs: str | None = field(
         default=None,
         metadata={"help": "Probabilities to sample data from datasets. Use commas to separate multiple datasets."},
+    )
+    eval_interleave_probs: str | None = field(
+        default=None,
+        metadata={"help": "Probabilities to sample data from evaluation datasets. Use commas to separate multiple datasets."},
     )
     overwrite_cache: bool = field(
         default=False,
@@ -115,6 +128,10 @@ class DataArguments:
         default=False,
         metadata={"help": "Whether or not to evaluate on each dataset separately."},
     )
+    max_eval_samples: int | None = field(
+        default=None,
+        metadata={"help": "Truncate the number of evaluation examples."},
+    )
     packing: bool | None = field(
         default=None,
         metadata={"help": "Enable sequences packing in training. Will automatically enable in pre-training."},
@@ -135,9 +152,18 @@ class DataArguments:
         default=True,
         metadata={"help": "Whether or not to enable thinking mode for reasoning models."},
     )
-    preserve_thinking: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to preserve thinking content in historical turns for reasoning models."},
+    reasoning_effort: str = field(
+        default="xhigh",
+        metadata={"help": "Reasoning effort for supported reasoning models (xhigh, medium, or low)."},
+    )
+    preserve_thinking: bool | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Whether or not to preserve thinking content in historical turns for reasoning models. "
+                "Uses the template default when unspecified."
+            )
+        },
     )
     tokenized_path: str | None = field(
         default=None,
@@ -193,13 +219,18 @@ class DataArguments:
         if self.interleave_probs is not None:
             if self.mix_strategy == "concat":
                 raise ValueError("`interleave_probs` is only valid for interleaved mixing.")
-
+        
             self.interleave_probs = list(map(float, split_arg(self.interleave_probs)))
             if self.dataset is not None and len(self.dataset) != len(self.interleave_probs):
                 raise ValueError("The length of dataset and interleave probs should be identical.")
-
-            if self.eval_dataset is not None and len(self.eval_dataset) != len(self.interleave_probs):
-                raise ValueError("The length of eval dataset and interleave probs should be identical.")
+        
+        if self.eval_interleave_probs is not None:
+            if self.mix_strategy == "concat":
+                raise ValueError("`eval_interleave_probs` is only valid for interleaved mixing.")
+        
+            self.eval_interleave_probs = list(map(float, split_arg(self.eval_interleave_probs)))
+            if self.eval_dataset is not None and len(self.eval_dataset) != len(self.eval_interleave_probs):
+                raise ValueError("The length of eval dataset and eval interleave probs should be identical.")
 
         if self.streaming and self.val_size > 1e-6 and self.val_size < 1:
             raise ValueError("Streaming mode should have an integer val size.")
@@ -209,6 +240,9 @@ class DataArguments:
 
         if self.mask_history and self.train_on_prompt:
             raise ValueError("`mask_history` is incompatible with `train_on_prompt`.")
+
+        if self.reasoning_effort not in {"xhigh", "medium", "low"}:
+            raise ValueError("`reasoning_effort` must be one of xhigh, medium, or low.")
 
         if self.neat_packing:
             self.packing = True

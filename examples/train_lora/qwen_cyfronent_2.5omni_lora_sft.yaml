@@ -1,0 +1,61 @@
+### model
+model_name_or_path: Qwen/Qwen2.5-Omni-7B
+trust_remote_code: true
+#resume_from_checkpoint: saves/qwen3-4b/lora/sft-stateful-test/checkpoint-60
+resume_from_checkpoint: null
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_target: all
+flash_attn: fa3
+ddp_find_unused_parameters: false
+
+### dataset
+dataset: st_train_v1, bentxt_train # Audio and Image datasets
+# dataset: st_train_v1 For audio only dataset
+# dataset: bentxt_train For image only dataset
+template: qwen2_omni
+cutoff_len: 2048
+max_steps: 20000
+preprocessing_num_workers: 4
+use_stateful_dataloader: true
+buffer_size: 128
+preprocessing_batch_size: 128
+streaming: true
+dataloader_num_workers: 4
+dataloader_prefetch_factor: 4
+dataloader_pin_memory: true
+dataloader_persistent_workers: true
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/skoneru/llamafactory_cyfronet
+logging_steps: 10
+save_steps: 1000
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: none  # choices: [none, wandb, tensorboard, swanlab, mlflow]
+
+### train
+per_device_train_batch_size: 32
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+seed: 42
+full_determinism: false
+### eval
+eval_dataset: bentxt_val, st_dev_v1
+# eval_dataset:  st_dev_v1 For audio only dataset
+# eval_dataset:  bentxt_val For image only dataset
+per_device_eval_batch_size: 16
+eval_strategy: steps
+eval_steps: 1000
+
+accelerator_config:
+  dispatch_batches: false

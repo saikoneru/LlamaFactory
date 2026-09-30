@@ -27,6 +27,7 @@ from ...model import load_model, load_tokenizer
 from ..trainer_utils import create_modelcard_and_push, create_ref_model
 from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 from .trainer import CustomSeq2SeqTrainer
+from ..stateful_dataloader import build_stateful_data_config
 
 
 if TYPE_CHECKING:
@@ -115,6 +116,8 @@ def run_sft(
         **tokenizer_module,
         **metric_module,
     )
+    
+    trainer._stateful_data_config = build_stateful_data_config(data_args)
 
     # Training
     if training_args.do_train:

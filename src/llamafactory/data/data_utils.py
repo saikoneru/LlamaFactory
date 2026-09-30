@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, TypedDict, 
 import fsspec
 import numpy as np
 import torch.utils.data
-from datasets import DatasetDict, concatenate_datasets
+from datasets import DatasetDict, Image, Value, concatenate_datasets, interleave_datasets
+from datasets.features import List
 
 from ..extras import logging
 
@@ -123,6 +124,14 @@ class _PythonMix(torch.utils.data.IterableDataset):
 
         return _PythonMix(taken_factory)
 
+    def skip(self, n: int):
+        def skipped_factory() -> Iterator[dict[str, Any]]:
+            for index, example in enumerate(self._factory()):
+                if index >= n:
+                    yield example
+
+        return _PythonMix(skipped_factory)
+
 
 def _emit_batch(output: dict[str, list[Any]], remove: set[str]) -> Iterator[dict[str, Any]]:
     keys = [key for key in output if key not in remove]
@@ -167,12 +176,64 @@ def _iter_interleave(
                 alive[picked] = False
 
 
+def _is_null_feature(feature: Any) -> bool:
+    return isinstance(feature, Value) and feature.dtype == "null"
+
+
+def _unify_mm_features_for_mix(
+    all_datasets: list[Union["Dataset", "IterableDataset"]],
+) -> list[Union["Dataset", "IterableDataset"]]:
+    r"""Make image columns mixable across path-based and bytes-based sources.
+
+    HuggingFace infers `_images` from the first example, so a path-only corpus becomes
+    `List({bytes: null, path: string})` while a bytes corpus becomes
+    `List({bytes: binary, path: null})`. `interleave_datasets` then refuses to align them.
+    Recasting to `List(Image(decode=False))` keeps both representations and leaves decoding
+    to LlamaFactory's collator.
+    """
+    image_feature = List(Image(decode=False))
+    unified = []
+    for dataset in all_datasets:
+        resolve_features = getattr(dataset, "_resolve_features", None)
+        if callable(resolve_features):
+            dataset = resolve_features()
+
+        features = getattr(dataset, "features", None)
+        if features is not None and "_images" in features and not _is_null_feature(features["_images"]):
+            dataset = dataset.cast_column("_images", image_feature)
+
+        unified.append(dataset)
+
+    return unified
+
+
+def requires_python_mix(encoder_schemas: list[Optional[frozenset[str]]] | None) -> bool:
+    r"""Report whether the extra-encoder columns disagree across the datasets.
+
+    Arrow types `_encoders` from one sample, so a mix of PIL images and nested
+    arrays cannot share a column and must go through ``_PythonMix``. When every
+    dataset declares the same encoders (including none at all), HuggingFace can
+    interleave them and the result stays a `datasets` object, which the stateful
+    dataloader needs for exact checkpoint/resume.
+    """
+    if encoder_schemas is None:  # caller did not report the columns
+        return True
+
+    return len({frozenset(schema or ()) for schema in encoder_schemas}) > 1
+
+
 def merge_dataset(
-    all_datasets: list[Union["Dataset", "IterableDataset"]], data_args: "DataArguments", seed: int
+    all_datasets: list[Union["Dataset", "IterableDataset"]],
+    data_args: "DataArguments",
+    seed: int,
+    is_eval: bool = False,
+    encoder_schemas: list[Optional[frozenset[str]]] | None = None,
 ) -> Union["Dataset", "IterableDataset"]:
     r"""Merge multiple datasets to a unified dataset."""
     if len(all_datasets) == 1:
         return all_datasets[0]
+
+    all_datasets = _unify_mm_features_for_mix(all_datasets)
 
     if data_args.mix_strategy == "concat":
         if data_args.streaming:
@@ -189,14 +250,24 @@ def merge_dataset(
             "interleave_over": "all_exhausted",
             "interleave_once": "all_exhausted_without_replacement",
         }[data_args.mix_strategy]
+        probabilities = data_args.eval_interleave_probs if is_eval else data_args.interleave_probs
+        if not requires_python_mix(encoder_schemas):
+            return interleave_datasets(
+                datasets=all_datasets,
+                probabilities=probabilities,
+                seed=seed,
+                stopping_strategy=strategy_map,  # type: ignore
+            )
+
         logger.info_rank0(
             "Interleaving datasets in Python so mixed extra-encoder rows "
-            "are not forced through PyArrow feature inference."
+            "are not forced through PyArrow feature inference. "
+            "`use_stateful_dataloader` cannot resume this mix."
         )
         return _PythonMix(
             lambda: _iter_interleave(
                 all_datasets,
-                data_args.interleave_probs,
+                probabilities,
                 seed,
                 strategy_map,
             )

@@ -181,7 +181,7 @@ wandb/
 swanlog/
 generated_predictions.jsonl
 predictions_score.json
-
+logs/
 # DVPS scratch
 .write_test
 examples/dvps/log.txt

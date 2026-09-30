@@ -14,6 +14,7 @@ from peft import PeftModel
 from transformers import DataCollatorForSeq2Seq
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, MROPE_MODELS
+from ..extras.nvtx import nvtx_range
 from ..extras.packages import is_pillow_available
 from .extra_encoders import (
     OMNI_MODEL_TYPES,
@@ -254,6 +255,16 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             features["position_ids"] = torch.cat([features["position_ids"], dummy_image_right_padding_mrope], dim=-1)
             features["attention_mask"] = torch.cat([features["attention_mask"], dummy_image_right_padding_attention_mask], dim=-1)
 
+        # Mirror the non-FA2 packing fix (#10737) for the packed-mrope path. The merged position_ids
+        # is built from per-subseq sequence_boundaries, which end at cutoff_len, while
+        # `DataCollatorForSeq2Seq(pad_to_multiple_of=...)` right-pads input_ids/attention_mask past
+        # cutoff_len. Right-pad the trailing (masked) positions with 0 so the merged position_ids
+        # matches seq_len before validating. Works for both 2D and 3D (mrope) position_ids since the
+        # sequence axis is last, and is idempotent with the has_dummy_image cat above.
+        pad_len = seq_len - features["position_ids"].shape[-1]
+        if pad_len > 0:
+            features["position_ids"] = F.pad(features["position_ids"], (0, pad_len), value=0)
+
         if features["position_ids"].shape != expected_position_ids_shape:
             raise ValueError(
                 f"Merged position_ids shape mismatch: got {features['position_ids'].shape}, expected {expected_position_ids_shape}."
@@ -471,11 +482,17 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 features[0]["labels"] = [IGNORE_INDEX] * len(fake_input_ids) + features[0]["labels"]
             batch_input_ids[0] = features[0]["input_ids"]
 
-        # Qwen multimodal inputs.
-        mm_inputs = self.template.mm_plugin.get_mm_inputs(
-            batch_images, batch_videos, batch_audios, batch_imglens, batch_vidlens, batch_audlens, batch_input_ids, self.processor
-        )
-
+        with nvtx_range(f"data/collate/mm_inputs(imgs={len(batch_images)})"):
+            mm_inputs = self.template.mm_plugin.get_mm_inputs(
+                batch_images,
+                batch_videos,
+                batch_audios,
+                batch_imglens,
+                batch_vidlens,
+                batch_audlens,
+                batch_input_ids,
+                self.processor,
+            )
         if "token_type_ids" in mm_inputs:
             token_type_ids = mm_inputs.pop("token_type_ids")
             for i, feature in enumerate(features):
@@ -493,8 +510,8 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                     padded.append([0] * pad_len + ids)
             mm_inputs["mm_token_type_ids"] = torch.tensor(padded, dtype=torch.long)
 
-        # Standard text padding.
-        features = super().__call__(features)
+        with nvtx_range("data/collate/pad"):
+            features: dict[str, torch.Tensor] = super().__call__(features)
 
         # Extra encoders: generic ``encoder_inputs`` for the composite; legacy
         # ``terramind_pixel_values`` only for the old TerraMind wrapper.
@@ -512,14 +529,25 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             has_packing = any(b is not None and len(b) > 2 for b in boundaries_list)
             if has_dummy_image and has_packing:
                 features["has_dummy_image"] = True
-            if not has_packing:
-                self._compute_rope_position_ids(features, mm_inputs)
-            else:
-                if is_omni:
-                    raise RuntimeError("Omni models are not supported for packed sequences for now.")
-                self._compute_rope_position_ids_with_packing(
-                    features, mm_inputs, packing_params_list, batch_imglens, batch_vidlens, batch_audlens, has_dummy_image
-                )
+            # When fake image/audio was injected, sequence_boundaries no longer match the tensor; use non-packing path.
+            with nvtx_range("data/collate/rope"):
+                if not has_packing:
+                    self._compute_rope_position_ids(features, mm_inputs)
+                else:
+                    if is_omni:  # TODO: support omni models for packed sequences @kuangdd
+                        raise RuntimeError("Omni models are not supported for packed sequences for now.")
+
+                    self._compute_rope_position_ids_with_packing(
+                        features,
+                        mm_inputs,
+                        packing_params_list,
+                        batch_imglens,
+                        batch_vidlens,
+                        batch_audlens,
+                        has_dummy_image,
+                    )
+
+            # For transformers compatibility, after https://github.com/huggingface/transformers/issues/39400
             if features["position_ids"].dim() == 3:
                 features["position_ids"] = torch.cat([features["position_ids"][0].unsqueeze(0), features["position_ids"]], dim=0)
 
@@ -586,7 +614,7 @@ class SFTDataCollatorWith4DAttentionMask(MultiModalDataCollatorForSeq2Seq):
                 features[key] = value.index_select(1, non_padding_indices)
             elif key in keys_on_seq_dim_1 and value.dim() == 2 and value.size(0) == 1 and value.size(1) == seq_len:
                 features[key] = value.index_select(1, non_padding_indices)
-
+                
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
         features = super().__call__(features)
         has_dummy_image = features.pop("has_dummy_image", False)
@@ -598,7 +626,18 @@ class SFTDataCollatorWith4DAttentionMask(MultiModalDataCollatorForSeq2Seq):
             assert features["input_ids"].shape[0] == 1, "bsz should be 1 for neat packing"
             if not has_dummy_image:
                 self._unpad_packed_features(features)
-            features["attention_mask"] = None
+            features["attention_mask"] = None  # let transformers handle causal packed mask.
+        else:
+            # `DataCollatorForSeq2Seq(pad_to_multiple_of=...)` pads `input_ids`/`attention_mask`
+            # but leaves `position_ids` untouched (it is not in `model_input_names`). On the
+            # non-FA2 packing path we do not unpad, so `position_ids` stays shorter than
+            # `input_ids`, which makes cos/sin shorter than query and crashes
+            # `apply_rotary_pos_emb`. Right-pad `position_ids` to the padded length to match.
+            position_ids = features.get("position_ids")
+            if torch.is_tensor(position_ids):
+                pad_len = features["input_ids"].shape[-1] - position_ids.shape[-1]
+                if pad_len > 0:
+                    features["position_ids"] = F.pad(position_ids, (0, pad_len), value=0)
 
         for key, value in features.items():
             if key in {"encoder_inputs", "kl_encoder_inputs"}:

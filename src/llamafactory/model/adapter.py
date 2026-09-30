@@ -158,6 +158,12 @@ def _expand_modules_to_save(model, additional_target):
     return expanded
 
 
+def _load_kt_inference_adapter_artifacts(model: "PreTrainedModel", adapter_path: str) -> None:
+    from kt_kernel.sft import load_kt_adapter_artifacts
+
+    load_kt_adapter_artifacts(model, adapter_path)
+
+
 def _setup_lora_tuning(
     config: "PretrainedConfig",
     model: "PreTrainedModel",
@@ -205,6 +211,8 @@ def _setup_lora_tuning(
             "revision": model_args.model_revision,
             "token": model_args.hf_hub_token,
         }
+        if model_args.use_kt:
+            init_kwargs["autocast_adapter_dtype"] = cast_trainable_params_to_fp32
 
         for adapter in adapter_to_merge:
             model: LoraModel = PeftModel.from_pretrained(model, adapter, **init_kwargs)
@@ -228,6 +236,12 @@ def _setup_lora_tuning(
                     model = PeftModel.from_pretrained(
                         model, adapter_to_resume, is_trainable=is_trainable, **init_kwargs
                     )
+
+            if model_args.use_kt and not is_trainable:
+                adapter_path = model_args._kt_adapter_artifact_path
+                if adapter_path is None:
+                    raise RuntimeError("KT adapter artifacts were not resolved before model loading.")
+                _load_kt_inference_adapter_artifacts(model, adapter_path)
 
         logger.info_rank0("Loaded adapter(s): {}".format(",".join(model_args.adapter_name_or_path)))
 
@@ -326,7 +340,7 @@ def _setup_lora_tuning(
                 raise ValueError("KTransformers only supports LoRA finetuning.")
 
             peft_config = LoraConfig(task_type=TaskType.CAUSAL_LM, inference_mode=False, **peft_kwargs)
-            model = get_peft_model(model, peft_config)
+            model = get_peft_model(model, peft_config, autocast_adapter_dtype=cast_trainable_params_to_fp32)
         elif model_args.use_unsloth:
             if finetuning_args.finetuning_type == "oft":
                 raise ValueError("Unsloth is currently not supported for OFT.")

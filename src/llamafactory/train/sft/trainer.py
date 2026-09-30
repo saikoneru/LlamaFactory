@@ -28,9 +28,13 @@ from typing_extensions import override
 
 from ...extras import logging
 from ...extras.constants import IGNORE_INDEX
+from ...extras.nvtx import maybe_wrap_callable, maybe_wrap_dataloader, nvtx_profiler_window, nvtx_range
 from ..callbacks import SaveProcessorCallback
 from ..fp8_utils import configure_fp8_environment, patch_accelerator_for_fp8, verify_fp8_status
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
+from ..stateful_dataloader import create_stateful_train_dataloader, save_stateful_dataloader_state, load_stateful_dataloader_state
+
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, get_last_checkpoint
 
 
 if TYPE_CHECKING:
@@ -127,11 +131,18 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         if training_args.fp8 and hasattr(self, "accelerator"):  # verify FP8 status after trainer initialization
             verify_fp8_status(self.accelerator, training_args)
 
+        # `backward` is called from inside `Trainer.training_step`, so mark it here.
+        if hasattr(self, "accelerator"):
+            maybe_wrap_callable(self.accelerator, "backward", "bwd")
+
     @override
     def create_optimizer(self, *args, **kwargs) -> "torch.optim.Optimizer":
         if self.optimizer is None:
             self.optimizer = create_custom_optimizer(self.model, self.args, self.finetuning_args)
-        return super().create_optimizer(*args, **kwargs)
+
+        optimizer = super().create_optimizer(*args, **kwargs)
+        maybe_wrap_callable(optimizer, "step", "optim/step")
+        return optimizer
 
     @override
     def create_scheduler(
@@ -148,18 +159,31 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         return super()._get_train_sampler(*args, **kwargs)
 
     @override
+    def training_step(self, *args, **kwargs):
+        nvtx_profiler_window(self.state.global_step)
+        with nvtx_range(f"train_step#{self.state.global_step}"):
+            return super().training_step(*args, **kwargs)
+
+    @override
     def compute_loss(self, model, inputs, *args, **kwargs):
-        if self.finetuning_args.use_asft_loss:
-            with torch.no_grad():
-                ref_outputs = self.ref_model(
-                    input_ids=inputs["input_ids"],
-                    attention_mask=inputs.get("attention_mask", None),
-                )
-                ref_logits = ref_outputs.logits
-            outputs = model(**inputs)
-            return self.compute_loss_func(outputs, inputs["labels"], ref_logits)
-        else:
-            return super().compute_loss(model, inputs, *args, **kwargs)
+        with nvtx_range("fwd"):
+            if self.finetuning_args.use_asft_loss:
+                with torch.no_grad(), nvtx_range("fwd/ref_model"):
+                    ref_outputs = self.ref_model(
+                        input_ids=inputs["input_ids"],
+                        attention_mask=inputs.get("attention_mask", None),
+                    )
+                    ref_logits = ref_outputs.logits
+                outputs = model(**inputs)
+                return self.compute_loss_func(outputs, inputs["labels"], ref_logits)
+            else:
+                return super().compute_loss(model, inputs, *args, **kwargs)
+
+    @override
+    def _maybe_log_save_evaluate(self, *args, **kwargs):
+        # contains the `tr_loss` all-gather + `.item()`, i.e. a device-to-host sync
+        with nvtx_range("sync/log_save_eval"):
+            return super()._maybe_log_save_evaluate(*args, **kwargs)
 
     @override
     def prediction_step(
@@ -233,3 +257,110 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         with open(output_prediction_file, "w", encoding="utf-8") as f:
             for text, pred, label in zip(decoded_inputs, decoded_preds, decoded_labels):
                 f.write(json.dumps({"prompt": text, "predict": pred, "label": label}, ensure_ascii=False) + "\n")
+
+
+    @override
+    def train(self, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None, **kwargs):
+        if resume_from_checkpoint is True:
+            resume_from_checkpoint = get_last_checkpoint(self.args.output_dir)
+            if resume_from_checkpoint is None:
+                raise ValueError(f"No checkpoint found in {self.args.output_dir}.")
+    
+        self._stateful_resume_checkpoint = resume_from_checkpoint
+    
+        original_ignore_data_skip = self.args.ignore_data_skip
+        if self.args.use_stateful_dataloader and resume_from_checkpoint:
+            self.args.ignore_data_skip = True
+    
+        try:
+            return super().train(
+                resume_from_checkpoint=resume_from_checkpoint,
+                trial=trial,
+                ignore_keys_for_eval=ignore_keys_for_eval,
+                **kwargs,
+            )
+        finally:
+            self.args.ignore_data_skip = original_ignore_data_skip
+            
+    @override
+    def _run_epoch(
+        self,
+        model,
+        epoch,
+        train_dataloader,
+        steps_in_epoch,
+        num_update_steps_per_epoch,
+        trial,
+        ignore_keys_for_eval,
+        start_time,
+        resume_from_checkpoint,
+        epochs_trained,
+        steps_trained_in_current_epoch,
+    ):
+        if (
+            self.args.use_stateful_dataloader
+            and getattr(self, "_stateful_dataloader_restored", False)
+            and epoch == epochs_trained
+            and resume_from_checkpoint is not None
+        ):
+            self._stateful_dataloader_restored = False
+    
+        return super()._run_epoch(
+            model,
+            epoch,
+            train_dataloader,
+            steps_in_epoch,
+            num_update_steps_per_epoch,
+            trial,
+            ignore_keys_for_eval,
+            start_time,
+            resume_from_checkpoint,
+            epochs_trained,
+            steps_trained_in_current_epoch,
+        )
+        
+    @override
+    def get_train_dataloader(self):
+        if not self.args.use_stateful_dataloader:
+            return super().get_train_dataloader()
+    
+        if self.train_dataset is None:
+            raise ValueError("Trainer: training requires a train_dataset.")
+    
+        logger.info_rank0(
+            f"Using StatefulDataLoader for training: "
+            f"dataset={type(self.train_dataset).__name__}, "
+            f"world_size={self.args.world_size}, "
+            f"workers={self.args.dataloader_num_workers}, "
+            f"batch_size={self._train_batch_size}"
+        )
+    
+        train_dataloader = create_stateful_train_dataloader(self)
+        self._stateful_train_dataloader = train_dataloader
+    
+        checkpoint_dir = getattr(self, "_stateful_resume_checkpoint", None)
+        if checkpoint_dir:
+            restored = load_stateful_dataloader_state(self, train_dataloader, checkpoint_dir)
+            if restored:
+                self._load_rng_state(checkpoint_dir)
+                self._stateful_dataloader_restored = True
+                logger.info_rank0(f"Restored StatefulDataLoader state from {checkpoint_dir}")
+    
+        return maybe_wrap_dataloader(train_dataloader, name="train")
+
+    @override
+    def _save_checkpoint(self, model, trial):
+        with nvtx_range("ckpt/save_model"):
+            super()._save_checkpoint(model, trial)
+    
+        if not self.args.use_stateful_dataloader:
+            return
+    
+        checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
+        run_dir = self._get_output_dir(trial=trial)
+        output_dir = os.path.join(run_dir, checkpoint_folder)
+    
+        with nvtx_range("ckpt/save_dataloader_state"):
+            self.accelerator.wait_for_everyone()
+            save_stateful_dataloader_state(self, output_dir)
+            self.accelerator.wait_for_everyone()

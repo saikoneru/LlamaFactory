@@ -29,6 +29,9 @@ template: qwen2_omni
 cutoff_len: 2048
 overwrite_cache: true
 streaming: true
+# All five datasets declare the same `medgemma` column, so the mix stays a
+# HuggingFace iterable and the dataloader state can be checkpointed.
+use_stateful_dataloader: true
 buffer_size: 128
 preprocessing_batch_size: 128
 preprocessing_num_workers: 16

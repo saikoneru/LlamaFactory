@@ -37,16 +37,38 @@ from transformers.video_utils import make_batched_videos
 from typing_extensions import override
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER
+from ..extras.nvtx import nvtx_range
 from ..extras.packages import is_pillow_available, is_pyav_available, is_transformers_version_greater_than
 
 
 if is_pillow_available():
-    from PIL import Image
+    from PIL import Image, ImageFile
     from PIL.Image import Image as ImageObject
+
+    # Allow PIL to load truncated images (fills missing data with grey) instead
+    # of raising OSError.  This is critical for streaming training: HuggingFace
+    # ``datasets`` decodes images inside DataLoader workers *before* LlamaFactory
+    # can catch the error, so an unhandled OSError kills the whole run.
+    ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 if is_pyav_available():
     import av
+    _VIDEO_IO_ERRORS: tuple[type[BaseException], ...] = (OSError, StopIteration, IndexError, av.FFmpegError)
+else:
+    _VIDEO_IO_ERRORS = (OSError, StopIteration, IndexError)
+
+
+class MediaDecodeError(RuntimeError):
+    """Unreadable image/video/audio input. Processors should drop the example."""
+
+
+def _open_video_container(video: "VideoInput"):
+    r"""Open a video with PyAV, raising MediaDecodeError for corrupt or missing files."""
+    try:
+        return av.open(video, "r")
+    except _VIDEO_IO_ERRORS as err:
+        raise MediaDecodeError(f"Failed to open video {video!r}: {err}") from err
 
 
 if TYPE_CHECKING:
@@ -257,21 +279,30 @@ class MMPluginMixin:
     def _regularize_images(self, images: list["ImageInput"], **kwargs) -> "RegularizedImageOutput":
         r"""Regularize images to avoid error. Including reading and pre-processing."""
         results = []
-        for image in images:
-            if isinstance(image, (str, BinaryIO)):
-                image = Image.open(image)
-            elif isinstance(image, bytes):
-                image = Image.open(BytesIO(image))
-            elif isinstance(image, dict):
-                if image["bytes"] is not None:
-                    image = Image.open(BytesIO(image["bytes"]))
-                else:
-                    image = Image.open(image["path"])
+        with nvtx_range(f"data/image_regularize(n={len(images)})"):
+            for image in images:
+                # PIL is lazy: for a path this is where the file is opened and, for a small
+                # file, fully read. For inline bytes there is no I/O at all here.
+                try:
+                    with nvtx_range("data/image_load"):
+                        if isinstance(image, (str, BinaryIO)):
+                            image = Image.open(image)
+                        elif isinstance(image, bytes):
+                            image = Image.open(BytesIO(image))
+                        elif isinstance(image, dict):
+                            if image["bytes"] is not None:
+                                image = Image.open(BytesIO(image["bytes"]))
+                            else:
+                                image = Image.open(image["path"])
 
-            if not isinstance(image, ImageObject):
-                raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
+                    if not isinstance(image, ImageObject):
+                        raise ValueError(f"Expect input is a list of images, but got {type(image)}.")
 
-            results.append(self._preprocess_image(image, **kwargs))
+                    # resize/convert forces the actual pixel decode
+                    with nvtx_range("data/image_preprocess"):
+                        results.append(self._preprocess_image(image, **kwargs))
+                except OSError as err:
+                    raise MediaDecodeError(f"Failed to decode image: {err}") from err
 
         return {"images": results}
 
@@ -288,18 +319,23 @@ class MMPluginMixin:
                 frames = video
                 durations.append(len(frames) / kwargs.get("video_fps", 2.0))
             else:
-                container = av.open(video, "r")
-                video_stream = next(stream for stream in container.streams if stream.type == "video")
-                sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
-                container.seek(0)
-                for frame_idx, frame in enumerate(container.decode(video_stream)):
-                    if frame_idx in sample_indices:
-                        frames.append(frame.to_image())
+                try:
+                    container = _open_video_container(video)
+                    video_stream = next(stream for stream in container.streams if stream.type == "video")
+                    sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
+                    container.seek(0)
+                    for frame_idx, frame in enumerate(container.decode(video_stream)):
+                        if frame_idx in sample_indices:
+                            frames.append(frame.to_image())
 
-                if video_stream.duration is None:
-                    durations.append(len(frames) / kwargs.get("video_fps", 2.0))
-                else:
-                    durations.append(float(video_stream.duration * video_stream.time_base))
+                    if video_stream.duration is None:
+                        durations.append(len(frames) / kwargs.get("video_fps", 2.0))
+                    else:
+                        durations.append(float(video_stream.duration * video_stream.time_base))
+                except MediaDecodeError:
+                    raise
+                except _VIDEO_IO_ERRORS as err:
+                    raise MediaDecodeError(f"Failed to decode video {video!r}: {err}") from err
 
             frames = self._regularize_images(frames, **kwargs)["images"]
             results.append(frames)
@@ -1010,21 +1046,26 @@ class Gemma4Plugin(BasePlugin):
                 durations.append(len(frames) / kwargs.get("video_fps", 2.0))
                 frames_indices.append(list(range(len(frames))))
             else:
-                container = av.open(video, "r")
-                video_stream = next(stream for stream in container.streams if stream.type == "video")
-                sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
-                original_fps = float(video_stream.average_rate)
-                # for correctly calculate timestamps
-                frames_indices.append([idx / original_fps * kwargs.get("video_fps", 2.0) for idx in sample_indices])
-                container.seek(0)
-                for frame_idx, frame in enumerate(container.decode(video_stream)):
-                    if frame_idx in sample_indices:
-                        frames.append(frame.to_image())
+                try:
+                    container = _open_video_container(video)
+                    video_stream = next(stream for stream in container.streams if stream.type == "video")
+                    sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
+                    original_fps = float(video_stream.average_rate)
+                    # for correctly calculate timestamps
+                    frames_indices.append([idx / original_fps * kwargs.get("video_fps", 2.0) for idx in sample_indices])
+                    container.seek(0)
+                    for frame_idx, frame in enumerate(container.decode(video_stream)):
+                        if frame_idx in sample_indices:
+                            frames.append(frame.to_image())
 
-                if video_stream.duration is None:
-                    durations.append(len(frames) / kwargs.get("video_fps", 2.0))
-                else:
-                    durations.append(float(video_stream.duration * video_stream.time_base))
+                    if video_stream.duration is None:
+                        durations.append(len(frames) / kwargs.get("video_fps", 2.0))
+                    else:
+                        durations.append(float(video_stream.duration * video_stream.time_base))
+                except MediaDecodeError:
+                    raise
+                except _VIDEO_IO_ERRORS as err:
+                    raise MediaDecodeError(f"Failed to decode video {video!r}: {err}") from err
 
             frames = self._regularize_images(frames, **kwargs)["images"]
             results.append(frames)
@@ -2320,25 +2361,30 @@ class Qwen2VLPlugin(BasePlugin):
                 durations.append(len(frames) / kwargs.get("video_fps", 2.0))
                 frames_indices.append(list(range(len(frames))))
             else:
-                container = av.open(video, "r")
-                video_stream = next(stream for stream in container.streams if stream.type == "video")
-                sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
-                original_fps = float(video_stream.average_rate)
-                # for qwen3vl video timestamp calculation
-                frames_indices.append(
-                    [idx / original_fps * kwargs.get("video_fps", 2.0) for idx in sample_indices]
-                )  # hack usage when do_sample_frames=False
-                container.seek(0)
-                for frame_idx, frame in enumerate(container.decode(video_stream)):
-                    if frame_idx in sample_indices:
-                        frames.append(frame.to_image())
+                try:
+                    container = _open_video_container(video)
+                    video_stream = next(stream for stream in container.streams if stream.type == "video")
+                    sample_indices = self._get_video_sample_indices(video_stream, **kwargs)
+                    original_fps = float(video_stream.average_rate)
+                    # for qwen3vl video timestamp calculation
+                    frames_indices.append(
+                        [idx / original_fps * kwargs.get("video_fps", 2.0) for idx in sample_indices]
+                    )  # hack usage when do_sample_frames=False
+                    container.seek(0)
+                    for frame_idx, frame in enumerate(container.decode(video_stream)):
+                        if frame_idx in sample_indices:
+                            frames.append(frame.to_image())
 
-                if video_stream.duration is None:
-                    fps_per_video.append(kwargs.get("video_fps", 2.0))
-                    durations.append(len(frames) / kwargs.get("video_fps", 2.0))
-                else:
-                    fps_per_video.append(len(sample_indices) / float(video_stream.duration * video_stream.time_base))
-                    durations.append(float(video_stream.duration * video_stream.time_base))
+                    if video_stream.duration is None:
+                        fps_per_video.append(kwargs.get("video_fps", 2.0))
+                        durations.append(len(frames) / kwargs.get("video_fps", 2.0))
+                    else:
+                        fps_per_video.append(len(sample_indices) / float(video_stream.duration * video_stream.time_base))
+                        durations.append(float(video_stream.duration * video_stream.time_base))
+                except MediaDecodeError:
+                    raise
+                except _VIDEO_IO_ERRORS as err:
+                    raise MediaDecodeError(f"Failed to decode video {video!r}: {err}") from err
 
             if len(frames) % 2 != 0:
                 frames.append(frames[-1])
