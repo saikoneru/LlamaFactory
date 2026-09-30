@@ -16,6 +16,8 @@ freeze_vision_tower: true
 ### dataset
 dataset: mimic_cxr_train, ecg_instruct_ptbxl_train, ecg_instruct_mimic_train, ecg_qa_ptbxl_paraphrased_train, ecg_qa_mimic_iv_ecg_paraphrased_train
 eval_dataset: mimic_cxr_validation, ecg_instruct_mimic_val, ecg_instruct_ptbxl_val, ecg_qa_mimic_iv_ecg_paraphrased_valid, ecg_qa_ptbxl_paraphrased_valid
+mix_strategy: interleave_over
+interleave_probs: [0.2, 0.2, 0.2, 0.2, 0.2]
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
 template: qwen2_omni
 cutoff_len: 2048
@@ -34,13 +36,13 @@ accelerator_config:
 output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/qwen25omni_lora_16_encoders_CD_all
 logging_steps: 10
 save_strategy: steps
-save_steps: 500
+save_steps: 250
 save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: phase4-mimic-omnirgb-lora
+run_name: qwen25omni_lora_CD_all_rank16
 
 ### train
 per_device_train_batch_size: 16
@@ -53,9 +55,11 @@ ddp_timeout: 180000000
 resume_from_checkpoint: null
 
 ### eval
-per_device_eval_batch_size: 32
+eval_on_each_dataset: false
+per_device_eval_batch_size: 4
 eval_strategy: steps
-eval_steps: 500
+eval_steps: 250
+max_eval_samples: 2048
 load_best_model_at_end: true
 metric_for_best_model: eval_loss
 greater_is_better: false

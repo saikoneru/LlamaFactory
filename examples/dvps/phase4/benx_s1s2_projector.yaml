@@ -1,37 +1,42 @@
-### Phase 4 control: MIMIC-CXR as native Omni RGB (copy of finetune_dvpsfm_mimic.yaml, new output dir).
+### BEN S1GRD + S2L2A, projector-only.
+### Qwen Thinker and the TerraMind backbone stay frozen.
 ### model
-model_name_or_path: Qwen/Qwen2.5-Omni-7B
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_s1s2
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
+low_cpu_mem_usage: false
 
 ### method
 stage: sft
 do_train: true
-finetuning_type: lora
-lora_rank: 16
-lora_target: all
+finetuning_type: freeze
+freeze_trainable_layers: 0
+freeze_trainable_modules: all
 freeze_vision_tower: true
+freeze_language_model: true
+freeze_multi_modal_projector: false
 
 ### dataset
-dataset: mimic_cxr_train, ecg_instruct_ptbxl_train, ecg_instruct_mimic_train, ecg_qa_ptbxl_paraphrased_train, ecg_qa_mimic_iv_ecg_paraphrased_train
-eval_dataset: mimic_cxr_validation, ecg_instruct_mimic_val, ecg_instruct_ptbxl_val, ecg_qa_mimic_iv_ecg_paraphrased_valid, ecg_qa_ptbxl_paraphrased_valid
-dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+dataset: benx_s1s2_train
+eval_dataset: benx_s1s2_val
 template: qwen2_omni
 cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
 overwrite_cache: true
+packing: false
 streaming: true
 buffer_size: 128
 preprocessing_batch_size: 128
-preprocessing_num_workers: 16
+preprocessing_num_workers: 1
 dataloader_num_workers: 1
 dataloader_drop_last: true
-max_steps: 100000
+max_steps: 60000
 accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/qwen25omni_lora_16_encoders_CD_all
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/bentxt_s1s2_projector
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
@@ -40,7 +45,7 @@ plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: phase4-mimic-omnirgb-lora
+run_name: phase4-bentxt-s1s2-projector
 
 ### train
 per_device_train_batch_size: 16
@@ -53,9 +58,10 @@ ddp_timeout: 180000000
 resume_from_checkpoint: null
 
 ### eval
-per_device_eval_batch_size: 32
+per_device_eval_batch_size: 16
 eval_strategy: steps
-eval_steps: 500
+eval_steps: 250
+max_eval_samples: 1024
 load_best_model_at_end: true
 metric_for_best_model: eval_loss
 greater_is_better: false

@@ -106,6 +106,76 @@ def test_image_placeholder_is_left_to_native_omni_vision():
 
 
 @pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_two_medgemma_payloads_expand_one_block_per_marker():
+    tokenizer = _VocabTokenizer({"<|terramind|>": 1, "<|medgemma|>": 2})
+    messages = [
+        {
+            "role": "user",
+            "content": "<medgemma><medgemma>\nHas the AV block resolved?",
+        }
+    ]
+    out = prepare_encoder_messages(
+        messages,
+        {"medgemma": ["ecg_prior.png", "ecg_recent.png"]},
+        SPECS,
+        tokenizer,
+    )
+    assert out[0]["content"].count("<|medgemma|>") == 512
+    assert "<medgemma>" not in out[0]["content"]
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_marker_count_must_match_payload_count():
+    tokenizer = _VocabTokenizer({"<|terramind|>": 1, "<|medgemma|>": 2})
+    messages = [{"role": "user", "content": "<medgemma>\nCompare the ECGs."}]
+    with pytest.raises(ValueError, match="per payload"):
+        prepare_encoder_messages(
+            messages,
+            {"medgemma": ["ecg_prior.png", "ecg_recent.png"]},
+            SPECS,
+            tokenizer,
+        )
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_two_terramind_payloads_expand_one_block_per_marker():
+    tokenizer = _VocabTokenizer({"<|terramind|>": 1, "<|medgemma|>": 2})
+    messages = [
+        {
+            "role": "user",
+            "content": "<terramind> earlier and <terramind> now. What changed?",
+        }
+    ]
+    out = expand_encoder_markers(
+        messages,
+        {
+            "terramind": [
+                {"S1GRD": "a_s1.npy", "S2L2A": "a_s2.npy"},
+                {"S1GRD": "b_s1.npy", "S2L2A": "b_s2.npy"},
+            ]
+        },
+        SPECS,
+        tokenizer,
+    )
+    assert out[0]["content"].count("<|terramind|>") == 256
+    assert "<terramind>" not in out[0]["content"]
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_incomplete_payload_inside_list_is_detected():
+    incomplete = incomplete_encoder_payloads(
+        {
+            "terramind": [
+                {"S1GRD": "a_s1.npy", "S2L2A": "a_s2.npy"},
+                {"S2L2A": "b_s2.npy"},
+            ]
+        },
+        SPECS,
+    )
+    assert incomplete == {"terramind": ["S1GRD"]}
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
 def test_encoder_payload_without_its_marker_is_rejected():
     tokenizer = _VocabTokenizer({"<|terramind|>": 1, "<|medgemma|>": 2})
     messages = [{"role": "user", "content": "<image>\nGenerate a radiology report."}]

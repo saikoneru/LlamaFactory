@@ -40,15 +40,19 @@ export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_MODULES_CACHE="${HF_HOME}/job_modules/${SLURM_JOB_ID}"
 export HF_DATASETS_CACHE="${HF_HOME}/job_datasets/${SLURM_JOB_ID}"
 export WANDB_ENTITY=DVPS-ai
-export WANDB_PROJECT=GI-finetuning
+export WANDB_PROJECT=CD-finetuning
 if [[ -f "${HOME}/.wandb_api_key" ]]; then
   export WANDB_API_KEY="$(cat "${HOME}/.wandb_api_key")"
 fi
 # Continue an existing W&B run when WANDB_RUN_ID is injected via sbatch --export.
-# Projector YAML defaults to the crashed 24015089 run so a plain resubmit keeps the same chart.
+# These YAMLs default to the crashed run so a plain resubmit keeps the same chart.
 if [[ -z "${WANDB_RUN_ID:-}" && "${YAML}" == *benx_terramind_projector.yaml ]]; then
   WANDB_RUN_ID=musyfqwu
   WANDB_RESUME="${WANDB_RESUME:-must}"
+fi
+if [[ -z "${WANDB_RUN_ID:-}" && "${YAML}" == *mimic_omnirgb_lora_subset.yaml ]]; then
+  WANDB_RUN_ID=g6v44zk7
+  WANDB_RESUME="${WANDB_RESUME:-allow}"
 fi
 if [[ -n "${WANDB_RUN_ID:-}" ]]; then
   export WANDB_RESUME="${WANDB_RESUME:-must}"

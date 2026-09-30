@@ -62,6 +62,13 @@ def build_output_schema(source: pa.Schema, args: argparse.Namespace) -> pa.Schem
     if args.image_column in features:
         features[args.encoder_column] = features.pop(args.image_column)
 
+    # Keep only the columns this view writes; stale feature entries make
+    # datasets reject the file at load time.
+    kept = {name.name for name in schema}
+    info.get("info", {})["features"] = {
+        name: feature for name, feature in features.items() if name in kept
+    }
+
     metadata[HF_METADATA_KEY] = json.dumps(info).encode()
     return schema.with_metadata(metadata)
 
@@ -80,7 +87,7 @@ def rewrite_messages(
         marker_count = sum(
             turn["content"].count(args.image_placeholder) for turn in turns
         )
-        if marker_count != 1 or image_count != 1:
+        if image_count < 1 or marker_count != image_count:
             if len(errors) < args.max_report_errors:
                 errors.append(
                     f"row {row_offset + row}: {marker_count} "
@@ -146,8 +153,8 @@ def main() -> None:
         args.out.unlink(missing_ok=True)
         listed = "\n  ".join(errors)
         raise SystemExit(
-            f"{args.src} does not have exactly one {args.image_placeholder} "
-            f"and one image per row:\n  {listed}"
+            f"{args.src} has rows where the {args.image_placeholder} count "
+            f"does not match the image count:\n  {listed}"
         )
 
     print(f"wrote {row_offset} rows to {args.out}")

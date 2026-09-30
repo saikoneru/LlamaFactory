@@ -167,15 +167,25 @@ def spec_min_modalities(spec: dict[str, Any]) -> int:
 
 
 def missing_required_modalities(sample: Any, spec: dict[str, Any]) -> list[str]:
-    """Return missing keys only when too few modalities are present."""
+    """Return missing keys only when too few modalities are present.
+
+    A list cell holds one payload per prompt marker; every payload must meet
+    the encoder's ``min_modalities`` contract on its own.
+    """
     required = spec_required_modalities(spec)
     if not required:
         return []
-    if not isinstance(sample, dict):
+    payloads = sample if isinstance(sample, (list, tuple)) else [sample]
+    if not payloads:
         return list(required)
-    missing = [name for name in required if sample.get(name) is None]
-    present_count = len(required) - len(missing)
-    return [] if present_count >= spec_min_modalities(spec) else missing
+    minimum = spec_min_modalities(spec)
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            return list(required)
+        missing = [name for name in required if payload.get(name) is None]
+        if len(required) - len(missing) < minimum:
+            return missing
+    return []
 
 
 def incomplete_encoder_payloads(
@@ -263,6 +273,21 @@ def prepare_encoder_messages(
     return messages
 
 
+def split_encoder_payloads(sample: Any) -> list[Any]:
+    """Split one dataset cell into ordered payloads, one per prompt marker.
+
+    A list or tuple cell holds one payload per element, so a comparison row
+    can carry two ECG images. Any other value (an image record, a TerraMind
+    modality dict, an Omni-AVSR clip dict) is a single payload. Keep in step
+    with ``omni_composite.encoders_base.split_encoder_payloads``.
+    """
+    if isinstance(sample, (list, tuple)):
+        if not sample:
+            raise ValueError("Encoder sample is an empty list.")
+        return list(sample)
+    return [sample]
+
+
 def expand_encoder_markers(
     messages: list[dict[str, str]],
     encoder_samples: dict[str, Any] | None,
@@ -305,10 +330,12 @@ def expand_encoder_markers(
                 raise ValueError(
                     f"{name} sample is missing required modalities {missing}."
                 )
-            if marker_count != 1:
+            expected = len(split_encoder_payloads(sample))
+            if marker_count != expected:
                 raise ValueError(
                     f"A {name!r} example must contain exactly one of {markers} "
-                    f"markers, found {marker_count}."
+                    f"markers per payload; found {marker_count} marker(s) for "
+                    f"{expected} payload(s)."
                 )
             replacement = placeholder * num_tokens
 

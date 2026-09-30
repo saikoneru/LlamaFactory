@@ -1,0 +1,72 @@
+### Phase 4: MedGemma-encoder counterpart of mimic_omnirgb_lora_all.yaml.
+### Same dataset mix and schedule; images route through <medgemma> views.
+### Effective batch matches the control (4 x 8 x 4 GPUs = 16 x 2 x 4 = 128);
+### the smaller per-device batch leaves room for the MedGemma tower.
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_medgemma
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: mimic_cxr_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train
+eval_dataset: mimic_cxr_medgemma_validation, ecg_instruct_mimic_medgemma_val, ecg_instruct_ptbxl_medgemma_val, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid, ecg_qa_ptbxl_paraphrased_medgemma_valid
+mix_strategy: interleave_over
+interleave_probs: [0.2, 0.2, 0.2, 0.2, 0.2]
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+template: qwen2_omni
+cutoff_len: 2048
+overwrite_cache: true
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 16
+dataloader_num_workers: 1
+dataloader_drop_last: true
+max_steps: 100000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/mimic_medgemma_lora_all
+logging_steps: 10
+save_strategy: steps
+save_steps: 250
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+run_name: qwen25omni_medgemma_CD_all_rank16
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+eval_on_each_dataset: false
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 250
+max_eval_samples: 2048
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5
