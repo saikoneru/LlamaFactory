@@ -38,7 +38,70 @@ def test_alpaca_converter():
         "_images": None,
         "_videos": None,
         "_audios": None,
+        "_encoders": {},
+        "_terramind": None,
     }
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_sharegpt_medgemma_from_hf_image_dict():
+    dataset_attr = DatasetAttr("file", "mimic")
+    dataset_attr.join(
+        {
+            "formatting": "sharegpt",
+            "columns": {"messages": "messages", "medgemma": "medgemma"},
+            "tags": {
+                "role_tag": "role",
+                "content_tag": "content",
+                "user_tag": "user",
+                "assistant_tag": "assistant",
+                "system_tag": "system",
+            },
+        }
+    )
+    data_args = DataArguments()
+    example = {
+        "messages": [
+            {"role": "user", "content": "<medgemma>\nGenerate a radiology report."},
+            {"role": "assistant", "content": "The lungs are clear."},
+        ],
+        "medgemma": [{"bytes": b"fake-jpeg", "path": None}],
+    }
+    dataset_converter = get_dataset_converter("sharegpt", dataset_attr, data_args)
+    result = dataset_converter(example)
+    assert result["_images"] is None
+    assert result["_encoders"]["medgemma"] == b"fake-jpeg"
+    assert result["_prompt"][0]["content"].startswith("<medgemma>")
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_sharegpt_medgemma_from_image_path_list():
+    dataset_attr = DatasetAttr("file", "mimic")
+    dataset_attr.join(
+        {
+            "formatting": "sharegpt",
+            "columns": {"messages": "messages", "medgemma": "medgemma"},
+            "tags": {
+                "role_tag": "role",
+                "content_tag": "content",
+                "user_tag": "user",
+                "assistant_tag": "assistant",
+                "system_tag": "system",
+            },
+        }
+    )
+    data_args = DataArguments()
+    example = {
+        "messages": [
+            {"role": "user", "content": "<medgemma>\nGenerate a radiology report."},
+            {"role": "assistant", "content": "The lungs are clear."},
+        ],
+        "medgemma": ["/tmp/cxr.png"],
+    }
+    dataset_converter = get_dataset_converter("sharegpt", dataset_attr, data_args)
+    result = dataset_converter(example)
+    assert result["_images"] is None
+    assert result["_encoders"]["medgemma"] == "/tmp/cxr.png"
 
 
 @pytest.mark.runs_on(["cpu", "mps"])
@@ -61,4 +124,6 @@ def test_sharegpt_converter():
         "_images": None,
         "_videos": None,
         "_audios": None,
+        "_encoders": {},
+        "_terramind": None,
     }

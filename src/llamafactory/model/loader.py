@@ -28,7 +28,13 @@ from transformers import (
 from trl import AutoModelForCausalLMWithValueHead
 
 from ..extras import logging
-from ..extras.misc import count_parameters, skip_check_imports, try_download_model_from_other_hub
+from ..extras.misc import (
+    attach_encoder_specs,
+    compatible_dynamic_imports,
+    count_parameters,
+    skip_check_imports,
+    try_download_model_from_other_hub,
+)
 from ..extras.packages import is_torch_version_greater_than
 from .adapter import init_adapter
 from .model_utils.compile import configure_compile
@@ -76,37 +82,41 @@ def load_tokenizer(model_args: "ModelArguments") -> "TokenizerModule":
     """
     init_kwargs = _get_init_kwargs(model_args)
     try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path,
-            use_fast=model_args.use_fast_tokenizer,
-            split_special_tokens=model_args.split_special_tokens,
-            padding_side="right",
-            **init_kwargs,
-        )
-    except ValueError:  # try another one
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_args.model_name_or_path,
-            use_fast=not model_args.use_fast_tokenizer,
-            padding_side="right",
-            **init_kwargs,
-        )
+        with compatible_dynamic_imports():
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_args.model_name_or_path,
+                    use_fast=model_args.use_fast_tokenizer,
+                    split_special_tokens=model_args.split_special_tokens,
+                    padding_side="right",
+                    **init_kwargs,
+                )
+            except ValueError:  # try another one
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_args.model_name_or_path,
+                    use_fast=not model_args.use_fast_tokenizer,
+                    padding_side="right",
+                    **init_kwargs,
+                )
     except Exception as e:
         raise OSError("Failed to load tokenizer.") from e
 
     patch_tokenizer(tokenizer, model_args)
 
     try:
-        processor = AutoProcessor.from_pretrained(
-            model_args.model_name_or_path,
-            use_fast=model_args.use_fast_tokenizer,
-            **init_kwargs,
-        )
-    except ValueError:  # try another one
-        processor = AutoProcessor.from_pretrained(
-            model_args.model_name_or_path,
-            use_fast=not model_args.use_fast_tokenizer,
-            **init_kwargs,
-        )
+        with compatible_dynamic_imports():
+            try:
+                processor = AutoProcessor.from_pretrained(
+                    model_args.model_name_or_path,
+                    use_fast=model_args.use_fast_tokenizer,
+                    **init_kwargs,
+                )
+            except ValueError:  # try another one
+                processor = AutoProcessor.from_pretrained(
+                    model_args.model_name_or_path,
+                    use_fast=not model_args.use_fast_tokenizer,
+                    **init_kwargs,
+                )
     except Exception as e:
         logger.info_rank0(f"Failed to load processor: {e}.")
         processor = None
@@ -118,6 +128,7 @@ def load_tokenizer(model_args: "ModelArguments") -> "TokenizerModule":
         processor = None
 
     if processor is not None:
+        processor = attach_encoder_specs(processor, model_args.model_name_or_path)
         patch_processor(processor, tokenizer, model_args)
 
     return {"tokenizer": tokenizer, "processor": processor}
@@ -126,7 +137,8 @@ def load_tokenizer(model_args: "ModelArguments") -> "TokenizerModule":
 def load_config(model_args: "ModelArguments") -> "PretrainedConfig":
     r"""Load model config."""
     init_kwargs = _get_init_kwargs(model_args)
-    config = AutoConfig.from_pretrained(model_args.model_name_or_path, **init_kwargs)
+    with compatible_dynamic_imports():
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path, **init_kwargs)
     if model_args.use_kt:
         from transformers.integrations.kt_artifacts import prepare_kt_pretrained_config
 
@@ -173,9 +185,11 @@ def load_model(
                 load_class = AutoModelForCausalLM
 
             if model_args.train_from_scratch:
-                model = load_class.from_config(config, trust_remote_code=model_args.trust_remote_code)
+                with compatible_dynamic_imports():
+                    model = load_class.from_config(config, trust_remote_code=model_args.trust_remote_code)
             else:
-                model = load_class.from_pretrained(**init_kwargs)
+                with compatible_dynamic_imports():
+                    model = load_class.from_pretrained(**init_kwargs)
                 if getattr(model.config, "model_type", None) in ["qwen2_5_omni", "qwen3_omni_moe"]:
                     model = getattr(model, "thinker")
 

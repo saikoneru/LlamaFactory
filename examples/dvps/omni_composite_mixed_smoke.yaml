@@ -1,0 +1,45 @@
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/omni_composite_mixed_smoke
+logging_steps: 1
+save_steps: 2
+save_total_limit: 1
+overwrite_output_dir: true
+save_only_model: false
+report_to: none
+
+### dataset
+dataset: dvps_smoke_mixed
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+low_cpu_mem_usage: false
+preprocessing_num_workers: 1
+dataloader_num_workers: 0
+max_steps: 2
+
+### train
+per_device_train_batch_size: 3
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.0
+bf16: true
+ddp_timeout: 180000000

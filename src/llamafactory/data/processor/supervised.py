@@ -16,11 +16,18 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
+from ...extras.constants import IGNORE_INDEX, TERRAMIND_PLACEHOLDER
 from ...extras import logging
-from ...extras.constants import IGNORE_INDEX
 from ..mm_plugin import MediaDecodeError
 from .processor_utils import DatasetProcessor, greedy_knapsack, infer_seqlen
-
+from ..extra_encoders import (
+    get_encoder_specs,
+    has_encoder_payload,
+    incomplete_encoder_payloads,
+    prepare_encoder_messages,
+    row_encoder_samples,
+    unreadable_encoder_media,
+)
 
 if TYPE_CHECKING:
     from ..mm_plugin import AudioInput, ImageInput, VideoInput
@@ -48,8 +55,79 @@ class PackingParams:
     right_padding_length: int
 
 
+
 @dataclass
 class SupervisedDatasetProcessor(DatasetProcessor):
+    def _row_encoder_samples(self, examples: dict[str, list[Any]], i: int) -> dict[str, Any]:
+        return row_encoder_samples(examples, i)
+
+    def _skip_incomplete_encoder_example(self, encoder_samples: dict[str, Any] | None) -> bool:
+        specs = get_encoder_specs(self.processor)
+        incomplete = incomplete_encoder_payloads(encoder_samples, specs)
+        if incomplete:
+            logger.warning_rank0_once(
+                "Skipping extra-encoder rows missing required inputs. "
+                f"First example: {incomplete}."
+            )
+            return True
+
+        unreadable = unreadable_encoder_media(encoder_samples, specs)
+        if unreadable:
+            logger.warning_rank0_once(
+                "Skipping extra-encoder rows whose media file is missing or empty. "
+                f"First example: {unreadable}."
+            )
+            return True
+
+        return False
+
+    def _prepare_terramind_messages(
+        self, messages: list[dict[str, str]], terramind: dict[str, Any] | None
+    ) -> list[dict[str, str]]:
+        messages = [dict(message) for message in messages]
+        marker_count = sum(message["content"].count(TERRAMIND_PLACEHOLDER) for message in messages)
+        modalities = [name for name, value in (terramind or {}).items() if value is not None]
+
+        if modalities:
+            if marker_count != 1:
+                raise ValueError(
+                    f"A TerraMind example must contain exactly one {TERRAMIND_PLACEHOLDER!r} marker, found {marker_count}."
+                )
+            if self.data_args.terramind_input_size % self.data_args.terramind_patch_size != 0:
+                raise ValueError("TerraMind input size must be divisible by patch size.")
+
+            token = self.data_args.terramind_token
+            if token not in self.tokenizer.get_vocab():
+                raise ValueError(
+                    f"TerraMind model token {token!r} is missing from the tokenizer. "
+                    "Load the tokenizer saved with the composite checkpoint."
+                )
+            patches = (self.data_args.terramind_input_size // self.data_args.terramind_patch_size) ** 2
+            num_tokens = patches * len(modalities)
+            replacement = token * num_tokens
+        else:
+            replacement = ""
+
+        for message in messages:
+            if TERRAMIND_PLACEHOLDER in message["content"]:
+                message["content"] = message["content"].replace(TERRAMIND_PLACEHOLDER, replacement)
+        return messages
+
+    def _prepare_encoder_messages(
+        self,
+        messages: list[dict[str, str]],
+        encoder_samples: dict[str, Any] | None,
+    ) -> list[dict[str, str]]:
+        specs = get_encoder_specs(self.processor)
+        messages = prepare_encoder_messages(
+            messages, encoder_samples or {}, specs, self.tokenizer
+        )
+        if specs:
+            return messages
+        return self._prepare_terramind_messages(
+            messages, (encoder_samples or {}).get("terramind")
+        )
+
     def _encode_data_example(
         self,
         prompt: list[dict[str, str]],
@@ -59,11 +137,14 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         images: list["ImageInput"],
         videos: list["VideoInput"],
         audios: list["AudioInput"],
+        encoder_samples: dict[str, Any] | None = None,
+        terramind: dict[str, Any] | None = None,
     ) -> tuple[list[int], list[int]] | None:
+        if encoder_samples is None and terramind is not None:
+            encoder_samples = {"terramind": terramind}
+        messages = self._prepare_encoder_messages(prompt + response, encoder_samples)
         try:
-            messages = self.template.mm_plugin.process_messages(
-                prompt + response, images, videos, audios, self.processor
-            )
+            messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
             input_ids, labels = self.template.mm_plugin.process_token_ids(
                 [], [], images, videos, audios, self.tokenizer, self.processor
             )
@@ -74,7 +155,7 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         encoded_pairs = self.template.encode_multiturn(self.tokenizer, messages, system, tools, discarding_history_cot)
         total_length = len(input_ids) + (1 if self.template.efficient_eos else 0)
         if self.data_args.mask_history:
-            encoded_pairs = encoded_pairs[::-1]  # high priority for last turns
+            encoded_pairs = encoded_pairs[::-1]
 
         for turn_idx, (source_ids, target_ids) in enumerate(encoded_pairs):
             if total_length >= self.data_args.cutoff_len:
@@ -94,12 +175,12 @@ class SupervisedDatasetProcessor(DatasetProcessor):
             else:
                 source_label = [IGNORE_INDEX] * source_len
 
-            if self.data_args.mask_history and turn_idx != 0:  # train on the last turn only
+            if self.data_args.mask_history and turn_idx != 0:
                 target_label = [IGNORE_INDEX] * target_len
             else:
                 target_label = target_ids
 
-            if self.data_args.mask_history:  # reversed sequences
+            if self.data_args.mask_history:
                 input_ids = source_ids + target_ids + input_ids
                 labels = source_label + target_label + labels
             else:
@@ -112,9 +193,8 @@ class SupervisedDatasetProcessor(DatasetProcessor):
 
         return input_ids, labels
 
+ 
     def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
-        # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         for i in range(len(examples["_prompt"])):
             if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
@@ -122,16 +202,27 @@ class SupervisedDatasetProcessor(DatasetProcessor):
                     "Dropped invalid example: {}".format(examples["_prompt"][i] + examples["_response"][i])
                 )
                 continue
-
-            encoded = self._encode_data_example(
-                prompt=examples["_prompt"][i],
-                response=examples["_response"][i],
-                system=examples["_system"][i],
-                tools=examples["_tools"][i],
-                images=examples["_images"][i] or [],
-                videos=examples["_videos"][i] or [],
-                audios=examples["_audios"][i] or [],
-            )
+ 
+            encoder_samples = self._row_encoder_samples(examples, i)
+            if self._skip_incomplete_encoder_example(encoder_samples):
+                continue
+            try:
+                encoded = self._encode_data_example(
+                    prompt=examples["_prompt"][i],
+                    response=examples["_response"][i],
+                    system=examples["_system"][i],
+                    tools=examples["_tools"][i],
+                    images=examples["_images"][i] or [],
+                    videos=examples["_videos"][i] or [],
+                    audios=examples["_audios"][i] or [],
+                    encoder_samples=encoder_samples,
+                )
+            except Exception as error:
+                logger.warning_rank0_once(
+                    "Dropped examples that failed media decode. "
+                    f"First example: {error}"
+                )
+                continue
             if encoded is None:
                 continue
 
@@ -142,7 +233,9 @@ class SupervisedDatasetProcessor(DatasetProcessor):
             model_inputs["images"].append(examples["_images"][i])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
-
+            model_inputs["encoders"].append(encoder_samples)
+            model_inputs["terramind"].append(encoder_samples.get("terramind"))
+ 
         return model_inputs
 
     def print_data_example(self, example: dict[str, list[int]]) -> None:
@@ -170,15 +263,29 @@ class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
                 )
                 continue
 
-            encoded = self._encode_data_example(
-                prompt=examples["_prompt"][i],
-                response=examples["_response"][i],
-                system=examples["_system"][i],
-                tools=examples["_tools"][i],
-                images=examples["_images"][i] or [],
-                videos=examples["_videos"][i] or [],
-                audios=examples["_audios"][i] or [],
-            )
+            encoder_samples = self._row_encoder_samples(examples, i)
+            if self._skip_incomplete_encoder_example(encoder_samples):
+                continue
+            if has_encoder_payload(encoder_samples):
+                raise ValueError("Packing is not supported for extra-encoder examples. Set `packing: false`.")
+
+            try:
+                encoded = self._encode_data_example(
+                    prompt=examples["_prompt"][i],
+                    response=examples["_response"][i],
+                    system=examples["_system"][i],
+                    tools=examples["_tools"][i],
+                    images=examples["_images"][i] or [],
+                    videos=examples["_videos"][i] or [],
+                    audios=examples["_audios"][i] or [],
+                    encoder_samples=encoder_samples,
+                )
+            except Exception as error:
+                logger.warning_rank0_once(
+                    "Dropped examples that failed media decode. "
+                    f"First example: {error}"
+                )
+                continue
             if encoded is None:
                 continue
 

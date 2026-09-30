@@ -1,0 +1,41 @@
+### Generate BEN captions from a freeze-trained TerraMind projector checkpoint.
+### After training, this path is the train output_dir (full weights, not a LoRA adapter).
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/benx_terramind_projector
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: false
+do_predict: true
+finetuning_type: freeze
+freeze_trainable_layers: 0
+freeze_vision_tower: true
+freeze_language_model: true
+freeze_multi_modal_projector: false
+
+### dataset
+eval_dataset: mmtrain_bentxt_terramind_test
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+max_samples: 64
+preprocessing_num_workers: 1
+dataloader_num_workers: 0
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/benx_terramind_projector_predict
+overwrite_output_dir: true
+report_to: none
+
+### eval
+per_device_eval_batch_size: 1
+predict_with_generate: true
+ddp_timeout: 180000000
+do_sample: false
+max_new_tokens: 512

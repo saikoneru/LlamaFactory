@@ -21,6 +21,7 @@ from huggingface_hub import hf_hub_download
 
 from ..extras.constants import DATA_CONFIG
 from ..extras.misc import use_modelscope, use_openmind
+from .extra_encoders import encoder_columns_from_config
 
 
 @dataclass
@@ -43,6 +44,8 @@ class DatasetAttr:
     images: str | None = None
     videos: str | None = None
     audios: str | None = None
+    terramind: str | None = None
+    encoder_columns: dict[str, str] | None = None
     # dpo columns
     chosen: str | None = None
     rejected: str | None = None
@@ -82,6 +85,10 @@ class DatasetAttr:
             column_names += ["images", "videos", "audios", "chosen", "rejected", "kto_tag"]
             for column_name in column_names:
                 self.set_attr(column_name, attr["columns"])
+            extra = encoder_columns_from_config(attr["columns"])
+            self.encoder_columns = extra
+            # Keep the TerraMind field so older dataset processors still work.
+            self.terramind = extra.get("terramind")
 
         if "tags" in attr:
             tag_names = ["role_tag", "content_tag"]

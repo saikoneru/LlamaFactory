@@ -102,6 +102,16 @@ class DataArguments:
         default=None,
         metadata={"help": "For debugging purposes, truncate the number of examples for each dataset."},
     )
+    max_eval_samples: int | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Cap streaming eval after this many preprocessed examples. "
+                "`max_samples` cannot be used with streaming; without a cap, "
+                "`interleave_over` eval never ends."
+            )
+        },
+    )
     eval_num_beams: int | None = field(
         default=None,
         metadata={"help": "Number of beams to use for evaluation. This argument will be passed to `model.generate`"},
@@ -170,6 +180,24 @@ class DataArguments:
         metadata={"help": "Whether or not to use a shared file system for the datasets."},
     )
 
+    terramind_token: str = field(
+        default="<|terramind|>",
+        metadata={
+            "help": "Legacy TerraMind placeholder used only when the processor "
+            "has no encoder_specs (old qwen2_5_omni_terramind checkpoints)."
+        },
+    )
+
+    terramind_input_size: int = field(
+        default=128,
+        metadata={"help": "Legacy TerraMind input resolution fallback when encoder_specs are missing."},
+    )
+
+    terramind_patch_size: int = field(
+        default=16,
+        metadata={"help": "Legacy TerraMind patch size fallback when encoder_specs are missing."},
+    )
+
     def __post_init__(self):
         def split_arg(arg):
             if isinstance(arg, str):
@@ -221,6 +249,12 @@ class DataArguments:
 
         if self.packing:
             self.cutoff_len -= 1  # avoid pad_to_multiple_of, needs improve
+            
+        if self.terramind_input_size % self.terramind_patch_size != 0:
+            raise ValueError(
+                f"`terramind_input_size` ({self.terramind_input_size}) must be divisible by "
+                f"`terramind_patch_size` ({self.terramind_patch_size})."
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

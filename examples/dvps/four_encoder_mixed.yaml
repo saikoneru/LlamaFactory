@@ -1,0 +1,85 @@
+### Projector-only SFT on qwen_omni_four with the five real datasets.
+### Mixed batches skip some encoders, so unused parameters are expected
+### (ddp_find_unused_parameters). Logs to W&B project dvps-fm.
+###
+###   lnqa_train                  native <image>
+###   lipcrops_180hours_av_train  native <audio> + <lipread> → omniavsr_video
+###   mimic_cxr_medgemma_train    <medgemma>
+###   benx_multimodal_test        <terramind> + native RGB
+###   train_v1                    native <audio> mixed with text-only rows
+###
+### BEN stays on the small multimodal_test parquet: local files are loaded
+### fully before streaming, and the 72G por_sum_win_multimodal train would
+### not fit next to the composite. Switch to benx_multimodal_train later.
+###
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_four
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: freeze
+freeze_trainable_layers: 0
+freeze_trainable_modules: all
+freeze_vision_tower: true
+freeze_language_model: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: lnqa_train, lipcrops_180hours_av_train, mimic_cxr_medgemma_train, benx_multimodal_test, train_v1
+mix_strategy: interleave_over
+interleave_probs: 0.2, 0.2, 0.2, 0.2, 0.2
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+# Must be >= 1. Local files are loaded fully, then turned into an iterable
+# with num_shards=dataloader_num_workers; 0 shards is an empty dataset.
+dataloader_num_workers: 1
+dataloader_drop_last: true
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/four_encoder_mixed
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+run_name: four-encoder-mixed-projectors
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: null
+
+### eval
+eval_dataset: lnqa_val, lipcrops_180hours_av_eval, mimic_cxr_medgemma_validation, benx_multimodal_val, dev_v1
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 100
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+# 5 evals x 500 steps = 2500 steps without improvement before stopping
+early_stopping_steps: 5

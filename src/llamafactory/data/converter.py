@@ -41,6 +41,12 @@ if TYPE_CHECKING:
 
 logger = logging.get_logger(__name__)
 
+_HF_MEDIA_KEYS = {"bytes", "path"}
+
+
+def _is_hf_media_dict(value: Any) -> bool:
+    return isinstance(value, dict) and bool(value) and set(value.keys()) <= _HF_MEDIA_KEYS
+
 
 @dataclass
 class DatasetConverter:
@@ -145,6 +151,64 @@ class DatasetConverter:
 
         return normalized
 
+    def _resolve_media_path(self, value: str) -> str:
+        if self.dataset_attr.load_from in ["script", "file"]:
+            media_path = os.path.join(self.data_args.media_dir, value)
+            if os.path.isfile(media_path):
+                return media_path
+        return value
+
+    def _resolve_encoder_sample(self, value: Any) -> Any:
+        r"""Resolve local paths for one extra-encoder cell (dict, path, or list)."""
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            if _is_hf_media_dict(value):
+                path = value.get("path")
+                raw = value.get("bytes")
+                if path:
+                    return self._resolve_media_path(path) if isinstance(path, str) else path
+                if raw is not None:
+                    return raw
+                return None
+            result = {}
+            for key, item in value.items():
+                if item is None:
+                    continue
+                result[key] = self._resolve_encoder_sample(item) if not isinstance(item, str) else self._resolve_media_path(item)
+            return result or None
+        if isinstance(value, (list, tuple)):
+            resolved = [self._resolve_encoder_sample(item) for item in value]
+            resolved = [item for item in resolved if item is not None]
+            if not resolved:
+                return None
+            if len(resolved) == 1:
+                return resolved[0]
+            return resolved
+        if isinstance(value, str):
+            return self._resolve_media_path(value)
+        return value
+
+    def _find_terramind(self, terramind: Any) -> Any:
+        r"""Backward-compatible TerraMind dict resolver."""
+        return self._resolve_encoder_sample(terramind)
+
+    def _collect_encoder_samples(self, example: dict[str, Any]) -> dict[str, Any]:
+        columns = dict(self.dataset_attr.encoder_columns or {})
+        if self.dataset_attr.terramind and "terramind" not in columns:
+            columns["terramind"] = self.dataset_attr.terramind
+        return {
+            name: self._resolve_encoder_sample(example.get(field))
+            for name, field in columns.items()
+        }
+
+    def _encoder_output(self, example: dict[str, Any]) -> dict[str, Any]:
+        samples = self._collect_encoder_samples(example)
+        return {
+            "_encoders": samples,
+            "_terramind": samples.get("terramind"),
+        }
+
     @abstractmethod
     def __call__(self, example: dict[str, Any]) -> dict[str, Any]:
         r"""Convert a single example in the dataset to the standard format."""
@@ -197,6 +261,7 @@ class AlpacaDatasetConverter(DatasetConverter):
             "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
+            **self._encoder_output(example),
         }
         return output
 
@@ -293,6 +358,7 @@ class SharegptDatasetConverter(DatasetConverter):
             "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
+            **self._encoder_output(example),
         }
         return output
 
@@ -433,6 +499,7 @@ class OpenAIDatasetConverter(DatasetConverter):
             "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
+            **self._encoder_output(example),
         }
         return output
 
@@ -476,6 +543,8 @@ def align_dataset(
     _images: []
     _videos: []
     _audios: []
+    _encoders: {name: sample | None}
+    _terramind: {"S2L2A": ...} | None
     """
     column_names = list(next(iter(dataset)).keys())
     kwargs = {}

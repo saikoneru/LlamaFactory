@@ -138,6 +138,26 @@ def _setup_freeze_tuning(
     logger.info_rank0("Set trainable layers: {}".format(",".join(trainable_layers)))
 
 
+def _expand_modules_to_save(model, additional_target):
+    r"""Expand ModuleDict names so PEFT can wrap each child, not the dict."""
+    if not additional_target:
+        return additional_target
+    expanded: list[str] = []
+    for name in additional_target:
+        module = model
+        found = True
+        for part in name.split("."):
+            if not hasattr(module, part):
+                found = False
+                break
+            module = getattr(module, part)
+        if found and isinstance(module, torch.nn.ModuleDict):
+            expanded.extend(f"{name}.{key}" for key in module.keys())
+        else:
+            expanded.append(name)
+    return expanded
+
+
 def _load_kt_inference_adapter_artifacts(model: "PreTrainedModel", adapter_path: str) -> None:
     from kt_kernel.sft import load_kt_adapter_artifacts
 
@@ -226,8 +246,46 @@ def _setup_lora_tuning(
         logger.info_rank0("Loaded adapter(s): {}".format(",".join(model_args.adapter_name_or_path)))
 
     if is_trainable and adapter_to_resume is None:  # create new lora weights while training
-        if len(finetuning_args.lora_target) == 1 and finetuning_args.lora_target[0] == "all":
-            target_modules = find_all_linear_modules(model, finetuning_args.freeze_vision_tower)
+        model_type = getattr(model.config, "model_type", None)
+
+        if model_type in {"qwen2_5_omni_terramind", "qwen2_5_omni_composite"}:
+            allowed_suffixes = {
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            }
+
+            target_modules = [
+                name
+                for name, module in model.named_modules()
+                if isinstance(module, torch.nn.Linear)
+                and "qwen.thinker.model.layers." in name
+                and name.rsplit(".", 1)[-1] in allowed_suffixes
+            ]
+
+            if not target_modules:
+                raise RuntimeError(
+                    "No Qwen Thinker text-decoder LoRA targets found."
+                )
+
+            logger.info_rank0(
+                f"{model_type}: using {len(target_modules)} explicit Thinker "
+                "text-decoder LoRA targets; extra-encoder projectors stay full-FT."
+            )
+
+        elif (
+            len(finetuning_args.lora_target) == 1
+            and finetuning_args.lora_target[0] == "all"
+        ):
+            target_modules = find_all_linear_modules(
+                model,
+                finetuning_args.freeze_vision_tower,
+            )
+
         else:
             target_modules = finetuning_args.lora_target
 
@@ -254,6 +312,10 @@ def _setup_lora_tuning(
             finetuning_args.additional_target = module_names
             logger.warning_rank0("Vocab has been resized, add {} to trainable params.".format(",".join(module_names)))
 
+        additional_target = _expand_modules_to_save(model, finetuning_args.additional_target)
+        if additional_target != finetuning_args.additional_target:
+            logger.info_rank0(f"Expanded modules_to_save: {additional_target}.")
+
         if finetuning_args.finetuning_type == "lora":
             peft_kwargs = {
                 "r": finetuning_args.lora_rank,
@@ -262,7 +324,7 @@ def _setup_lora_tuning(
                 "lora_dropout": finetuning_args.lora_dropout,
                 "use_rslora": finetuning_args.use_rslora,
                 "use_dora": finetuning_args.use_dora,
-                "modules_to_save": finetuning_args.additional_target,
+                "modules_to_save": additional_target,
             }
         elif finetuning_args.finetuning_type == "oft":
             peft_kwargs = {
@@ -270,7 +332,7 @@ def _setup_lora_tuning(
                 "oft_block_size": finetuning_args.oft_block_size,
                 "target_modules": target_modules,
                 "module_dropout": finetuning_args.module_dropout,
-                "modules_to_save": finetuning_args.additional_target,
+                "modules_to_save": additional_target,
             }
 
         if model_args.use_kt:

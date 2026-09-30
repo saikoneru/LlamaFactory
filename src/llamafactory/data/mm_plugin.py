@@ -342,6 +342,39 @@ class MMPluginMixin:
 
         return {"videos": results, "durations": durations}
 
+    @staticmethod
+    def _load_audio_file(source: "AudioInput") -> tuple["np.ndarray", int]:
+        """Decode a path/file to mono float32. Avoid torchcodec (needs CUDA 13 NPP)."""
+        if isinstance(source, (str, os.PathLike)):
+            path = os.fspath(source)
+            if not os.path.isfile(path):
+                raise RuntimeError(f"audio file missing: {path}")
+            if os.path.getsize(path) == 0:
+                raise RuntimeError(f"audio file empty: {path}")
+        errors: list[str] = []
+        try:
+            import soundfile
+
+            array, rate = soundfile.read(source, dtype="float32", always_2d=True)
+            return np.asarray(array.mean(axis=1), dtype=np.float32), int(rate)
+        except Exception as error:
+            errors.append(f"soundfile: {error}")
+        try:
+            import librosa
+
+            array, rate = librosa.load(source, sr=None, mono=True)
+            return np.asarray(array, dtype=np.float32), int(rate)
+        except Exception as error:
+            errors.append(f"librosa: {error}")
+        try:
+            waveform, rate = torchaudio.load(source)
+            if waveform.shape[0] > 1:
+                waveform = waveform.mean(dim=0, keepdim=True)
+            return waveform.squeeze(0).cpu().numpy(), int(rate)
+        except Exception as error:
+            errors.append(f"torchaudio: {error}")
+        raise RuntimeError("Could not decode audio. Tried: " + "; ".join(errors))
+
     def _regularize_audios(
         self, audios: list["AudioInput"], sampling_rate: float, **kwargs
     ) -> "RegularizedAudioOutput":
@@ -349,14 +382,11 @@ class MMPluginMixin:
         results, sampling_rates = [], []
         for audio in audios:
             if not isinstance(audio, np.ndarray):
-                audio, sr = torchaudio.load(audio)
-                if audio.shape[0] > 1:
-                    audio = audio.mean(dim=0, keepdim=True)
-
+                audio, sr = self._load_audio_file(audio)
                 if sr != sampling_rate:
-                    audio = torchaudio.functional.resample(audio, sr, sampling_rate)
-
-                audio = audio.squeeze(0).numpy()
+                    audio = torchaudio.functional.resample(
+                        torch.from_numpy(audio).float(), sr, sampling_rate
+                    ).numpy()
 
             results.append(audio)
             sampling_rates.append(sampling_rate)

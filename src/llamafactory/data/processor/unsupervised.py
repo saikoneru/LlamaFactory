@@ -17,6 +17,12 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from ...extras import logging
 from ..data_utils import Role
+from ..extra_encoders import (
+    get_encoder_specs,
+    incomplete_encoder_payloads,
+    prepare_encoder_messages,
+    row_encoder_samples,
+)
 from .processor_utils import DatasetProcessor, infer_seqlen
 
 
@@ -37,12 +43,17 @@ class UnsupervisedDatasetProcessor(DatasetProcessor):
         images: list["ImageInput"],
         videos: list["VideoInput"],
         audios: list["AudioInput"],
+        encoder_samples: dict[str, Any] | None = None,
     ) -> tuple[list[int], list[int]]:
         if len(response) == 1:
             messages = prompt + response
         else:
             messages = prompt + [{"role": Role.ASSISTANT.value, "content": ""}]
 
+        specs = get_encoder_specs(self.processor)
+        messages = prepare_encoder_messages(
+            messages, encoder_samples or {}, specs, self.tokenizer
+        )
         messages = self.template.mm_plugin.process_messages(messages, images, videos, audios, self.processor)
         input_ids, labels = self.template.encode_oneturn(self.tokenizer, messages, system, tools)
         if self.template.efficient_eos:
@@ -66,6 +77,14 @@ class UnsupervisedDatasetProcessor(DatasetProcessor):
                 )
                 continue
 
+            encoder_samples = row_encoder_samples(examples, i)
+            incomplete = incomplete_encoder_payloads(encoder_samples, get_encoder_specs(self.processor))
+            if incomplete:
+                logger.warning_rank0_once(
+                    "Skipping extra-encoder rows missing required inputs. "
+                    f"First example: {incomplete}."
+                )
+                continue
             input_ids, labels = self._encode_data_example(
                 prompt=examples["_prompt"][i],
                 response=examples["_response"][i],
@@ -74,6 +93,7 @@ class UnsupervisedDatasetProcessor(DatasetProcessor):
                 images=examples["_images"][i] or [],
                 videos=examples["_videos"][i] or [],
                 audios=examples["_audios"][i] or [],
+                encoder_samples=encoder_samples,
             )
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
@@ -81,6 +101,8 @@ class UnsupervisedDatasetProcessor(DatasetProcessor):
             model_inputs["images"].append(examples["_images"][i])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
+            model_inputs["encoders"].append(encoder_samples)
+            model_inputs["terramind"].append(encoder_samples.get("terramind"))
 
         return model_inputs
 

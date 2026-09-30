@@ -1,0 +1,82 @@
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/skoneru/dvps/models/qwen_terramind_encoder_s2l2a
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+# LoRA only on the Qwen text decoder projections
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+
+# Train + save the TerraMind -> Qwen projector as a normal module
+additional_target: projector
+freeze_vision_tower: true   # unfreeze if you want the vision encoder to adapt to Sentinel imagery
+# deepspeed: examples/deepspeed/ds_z2_config.json   # uncomment for multi-GPU; z2 is usually enough for LoRA on a 7B model, use ds_z3_config.json if you still OOM
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/finetuned/qwen2_omni-7b/lora_encoder_terramindl2_omnirgb_all/
+logging_steps: 10
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+run_name: qwen2_omni-7b_lora_terramindl2_omnirgb
+
+### dataset
+#dataset:  train_v1
+dataset:  benx_terramindl2_omnirgb_train
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/home/plgrid/plgskoneru/LLaMA-Factory/data
+
+### eval
+# eval_dataset with streaming: true works, but `val_size` (auto-split from
+# train) does NOT -- you must supply a separate eval dataset explicitly.
+eval_dataset: benx_terramindl2_omnirgb_test
+per_device_eval_batch_size: 32
+eval_strategy: steps
+eval_steps: 500
+packing: false
+low_cpu_mem_usage: false
+
+# --- early stopping ---
+# save_steps must be evenly divisible by eval_steps (500 % 500 == 0, so OK)
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5   # stop if eval_loss hasn't improved for 5 consecutive evals (2500 steps of patience)
+
+# --- streaming ---
+# With streaming=true, HF `datasets` reads the parquet lazily instead of
+# materializing the full split in memory/on disk as an Arrow cache.
+streaming: true
+buffer_size: 128              # shuffle buffer size (examples held in memory for shuffling)
+preprocessing_batch_size: 128 # batch size used when mapping/tokenizing while streaming
+preprocessing_num_workers: 1 # only used for non-streaming map calls; harmless to leave set
+
+# a single parquet file = 1 shard, so keep this low or pre-shard the file
+# (see note below) if you want to raise it.
+dataloader_num_workers: 4
+
+# Streaming datasets have no known length, so num_train_epochs can't be used
+# to compute total steps -- set max_steps explicitly instead.
+max_steps: 60000
+
+accelerator_config:
+  dispatch_batches: false   # required for streaming + multi-GPU/accelerate
+
+### train
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 2
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null

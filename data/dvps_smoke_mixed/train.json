@@ -1,0 +1,52 @@
+[
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "<terramind>\nDescribe this Sentinel pair."
+      },
+      {
+        "role": "assistant",
+        "content": "A mixed land-cover patch."
+      }
+    ],
+    "terramind": {
+      "S1GRD": "dvps_smoke_mixed/s1.npy",
+      "S2L2A": "dvps_smoke_mixed/s2.npy"
+    },
+    "medgemma": null,
+    "images": null
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "<medgemma>\nWrite a short CXR report."
+      },
+      {
+        "role": "assistant",
+        "content": "No acute cardiopulmonary process."
+      }
+    ],
+    "terramind": null,
+    "medgemma": "dvps_smoke_mixed/cxr.png",
+    "images": null
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "<image>\nWhat is in this photo?"
+      },
+      {
+        "role": "assistant",
+        "content": "A gray-blue square."
+      }
+    ],
+    "terramind": null,
+    "medgemma": null,
+    "images": [
+      "dvps_smoke_mixed/rgb.png"
+    ]
+  }
+]
