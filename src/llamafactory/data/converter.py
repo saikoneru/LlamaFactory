@@ -197,10 +197,16 @@ class DatasetConverter:
         columns = dict(self.dataset_attr.encoder_columns or {})
         if self.dataset_attr.terramind and "terramind" not in columns:
             columns["terramind"] = self.dataset_attr.terramind
-        return {
-            name: self._resolve_encoder_sample(example.get(field))
-            for name, field in columns.items()
-        }
+        samples = {}
+        for name, field in columns.items():
+            value = example.get(field)
+            sample = self._resolve_encoder_sample(value)
+            # Keep a list cell a list: a streamed column must keep one type,
+            # or two-image rows are turned into strings and dropped.
+            if isinstance(value, (list, tuple)) and sample is not None and not isinstance(sample, list):
+                sample = [sample]
+            samples[name] = sample
+        return samples
 
     def _encoder_output(self, example: dict[str, Any]) -> dict[str, Any]:
         samples = self._collect_encoder_samples(example)
