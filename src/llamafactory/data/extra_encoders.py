@@ -46,13 +46,13 @@ OMNI_MODEL_TYPES = {
     *COMPOSITE_ENCODER_MODEL_TYPES,
 }
 
-# Keep in sync with omni_composite.encoders_omniavsr. LipCrops prompts/columns
-# use <lipread>; the composite encoder is still named omniavsr_video.
+# Keep in sync with omni_composite.encoders_autoavsr. LipCrops prompts/columns
+# use <lipread>; the composite encoder is named autoavsr_video.
 LIPREAD_MARKER = "<lipread>"
 LIPREAD_COLUMN = "lipread"
 
 
-def _omniavsr_stream(spec: dict[str, Any]) -> str:
+def _autoavsr_stream(spec: dict[str, Any]) -> str:
     extra = spec.get("extra") if isinstance(spec.get("extra"), dict) else {}
     return str(extra.get("stream") or "")
 
@@ -72,7 +72,7 @@ def spec_prompt_markers(spec: dict[str, Any]) -> list[str]:
     aliases.extend(str(item) for item in (spec.get("marker_aliases") or []))
     extra = spec.get("extra") if isinstance(spec.get("extra"), dict) else {}
     aliases.extend(str(item) for item in (extra.get("marker_aliases") or []))
-    if spec.get("type") == "omniavsr" and _omniavsr_stream(spec) == "video":
+    if spec.get("type") == "autoavsr" and _autoavsr_stream(spec) == "video":
         aliases.append(LIPREAD_MARKER)
     return _unique([marker, *aliases])
 
@@ -83,7 +83,7 @@ def spec_column_names(spec: dict[str, Any]) -> list[str]:
     aliases.extend(str(item) for item in (spec.get("column_aliases") or []))
     extra = spec.get("extra") if isinstance(spec.get("extra"), dict) else {}
     aliases.extend(str(item) for item in (extra.get("column_aliases") or []))
-    if spec.get("type") == "omniavsr" and _omniavsr_stream(spec) == "video":
+    if spec.get("type") == "autoavsr" and _autoavsr_stream(spec) == "video":
         aliases.append(LIPREAD_COLUMN)
     return _unique([name, *aliases])
 
@@ -278,7 +278,7 @@ def split_encoder_payloads(sample: Any) -> list[Any]:
 
     A list or tuple cell holds one payload per element, so a comparison row
     can carry two ECG images. Any other value (an image record, a TerraMind
-    modality dict, an Omni-AVSR clip dict) is a single payload. Keep in step
+    modality dict, an Auto-AVSR clip dict) is a single payload. Keep in step
     with ``omni_composite.encoders_base.split_encoder_payloads``.
     """
     if isinstance(sample, (list, tuple)):

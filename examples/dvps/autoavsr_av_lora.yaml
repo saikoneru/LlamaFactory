@@ -1,8 +1,10 @@
-### Same mix as four_encoder_mixed.yaml, with val loops and early stopping.
-### Separate output dir so it can run beside the no-eval job.
-###
+### Both projectors full fine-tune plus LoRA on the Qwen Thinker text decoder.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+### Both Auto-AVSR Conformers stay frozen. Every row has audio and video.
+
 ### model
-model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_four
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_autoavsr_av
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -11,17 +13,16 @@ low_cpu_mem_usage: false
 ### method
 stage: sft
 do_train: true
-finetuning_type: freeze
-freeze_trainable_layers: 0
-freeze_trainable_modules: all
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
 freeze_vision_tower: true
-freeze_language_model: true
-freeze_multi_modal_projector: false
 
 ### dataset
-dataset: lnqa_train, lipcrops_180hours_av_train, mimic_cxr_medgemma_train, benx_multimodal_test, train_v1
-mix_strategy: interleave_over
-interleave_probs: 0.2, 0.2, 0.2, 0.2, 0.2
+dataset: mmtrain_lipcrops_autoavsr_av_train
+eval_dataset: mmtrain_lipcrops_autoavsr_av_val
 template: qwen2_omni
 cutoff_len: 2048
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
@@ -38,7 +39,7 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/four_encoder_mixed_eval
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/autoavsr_av_lora
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
@@ -47,7 +48,7 @@ plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: four-encoder-mixed-projectors-eval
+run_name: lipcrops-autoavsr-audiovideo-projectors-lora
 
 ### train
 per_device_train_batch_size: 1
@@ -57,18 +58,14 @@ lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
-ddp_find_unused_parameters: true
 resume_from_checkpoint: null
 
 ### eval
-# interleave_over eval is otherwise infinite (train relies on max_steps).
-eval_dataset: lnqa_val, lipcrops_180hours_av_eval, mimic_cxr_medgemma_validation, benx_multimodal_val, dev_v1
-max_eval_samples: 128
 per_device_eval_batch_size: 1
 eval_strategy: steps
 eval_steps: 500
+max_eval_samples: 1024
 load_best_model_at_end: true
 metric_for_best_model: eval_loss
 greater_is_better: false
-# 5 evals x 500 steps = 2500 steps without improvement before stopping
 early_stopping_steps: 5

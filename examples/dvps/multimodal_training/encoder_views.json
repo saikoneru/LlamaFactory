@@ -20,15 +20,15 @@
       ],
       "min_modalities": 1
     },
-    "omniavsr_audio": {
-      "encoder": "omniavsr_audio",
-      "marker": "<omniavsr_audio>",
-      "column": "omniavsr_audio"
+    "autoavsr_audio": {
+      "encoder": "autoavsr_audio",
+      "marker": "<autoavsr_audio>",
+      "column": "autoavsr_audio"
     },
-    "omniavsr_video": {
-      "encoder": "omniavsr_video",
-      "marker": "<omniavsr_video>",
-      "column": "omniavsr_video"
+    "autoavsr_video": {
+      "encoder": "autoavsr_video",
+      "marker": "<autoavsr_video>",
+      "column": "autoavsr_video"
     }
   },
   "datasets": {
@@ -68,14 +68,14 @@
       "mode": "rewrite",
       "routes": [
         {
-          "route": "omniavsr_audio",
+          "route": "autoavsr_audio",
           "source_column": "audios",
           "fallback_markers": [
             "<audio>"
           ]
         },
         {
-          "route": "omniavsr_video",
+          "route": "autoavsr_video",
           "source_column": "lipread",
           "fallback_markers": [
             "<lipread>"

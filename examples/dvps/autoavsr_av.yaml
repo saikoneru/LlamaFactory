@@ -1,8 +1,11 @@
-### Resume four_enc_train from checkpoint-6500 after empty LipCrops mp4 crash.
-### Same mix as the crashed run (no eval). Do not clobber the eval job.
-###
+### Projector-only SFT on Qwen2.5-Omni + Auto-AVSR audio and video.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+### Both projectors train; Qwen and both Auto-AVSR Conformers stay frozen.
+### Every row has <autoavsr_audio> and <autoavsr_video>.
+
 ### model
-model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_four
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_autoavsr_av
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -19,9 +22,8 @@ freeze_language_model: true
 freeze_multi_modal_projector: false
 
 ### dataset
-dataset: lnqa_train, lipcrops_180hours_av_train, mimic_cxr_medgemma_train, benx_multimodal_test, train_v1
-mix_strategy: interleave_over
-interleave_probs: 0.2, 0.2, 0.2, 0.2, 0.2
+dataset: mmtrain_lipcrops_autoavsr_av_train
+eval_dataset: mmtrain_lipcrops_autoavsr_av_val
 template: qwen2_omni
 cutoff_len: 2048
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
@@ -38,16 +40,16 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/four_encoder_mixed
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/autoavsr_av
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
 save_total_limit: 3
 plot_loss: true
-overwrite_output_dir: false
+overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: four-encoder-mixed-projectors
+run_name: lipcrops-autoavsr-audiovideo-projectors-only
 
 ### train
 per_device_train_batch_size: 1
@@ -57,8 +59,14 @@ lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
-ddp_find_unused_parameters: true
-resume_from_checkpoint: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/four_encoder_mixed/checkpoint-6500
+resume_from_checkpoint: null
 
 ### eval
-eval_strategy: "no"
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5

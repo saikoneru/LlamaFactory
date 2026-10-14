@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_autoavsr_video/config.json",
+  "output_root": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training",
+  "routes": {
+    "autoavsr_video": {
+      "encoder": "autoavsr_video",
+      "marker": "<autoavsr_video>",
+      "column": "autoavsr_video"
+    }
+  },
+  "datasets": {
+    "lipcrops_180hours_autoavsr_video": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "remove_markers": [
+        "<audio>"
+      ],
+      "drop_columns": [
+        "audios"
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
+          "output": "lipcrops_180hours_autoavsr_video/train.parquet"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
+          "output": "lipcrops_180hours_autoavsr_video/val.parquet"
+        },
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+          "output": "lipcrops_180hours_autoavsr_video/eval.parquet"
+        }
+      }
+    }
+  }
+}

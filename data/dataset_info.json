@@ -61,13 +61,13 @@
       "system_tag": "system"
     }
   },
-  "mmtrain_lipcrops_omniavsr_av_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/train.parquet",
+  "mmtrain_lipcrops_autoavsr_av_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_av/train.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
-      "omniavsr_audio": "omniavsr_audio",
-      "omniavsr_video": "omniavsr_video"
+      "autoavsr_audio": "autoavsr_audio",
+      "autoavsr_video": "autoavsr_video"
     },
     "tags": {
       "role_tag": "role",
@@ -77,13 +77,13 @@
       "system_tag": "system"
     }
   },
-  "mmtrain_lipcrops_omniavsr_av_val": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/val.parquet",
+  "mmtrain_lipcrops_autoavsr_av_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_av/val.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
-      "omniavsr_audio": "omniavsr_audio",
-      "omniavsr_video": "omniavsr_video"
+      "autoavsr_audio": "autoavsr_audio",
+      "autoavsr_video": "autoavsr_video"
     },
     "tags": {
       "role_tag": "role",
@@ -93,13 +93,103 @@
       "system_tag": "system"
     }
   },
-  "mmtrain_lipcrops_omniavsr_av_eval": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours/eval.parquet",
+  "mmtrain_lipcrops_autoavsr_av_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_av/eval.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
-      "omniavsr_audio": "omniavsr_audio",
-      "omniavsr_video": "omniavsr_video"
+      "autoavsr_audio": "autoavsr_audio",
+      "autoavsr_video": "autoavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_video_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_video/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_video": "autoavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_video_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_video/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_video": "autoavsr_video"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_audio_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_audio/train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_audio": "autoavsr_audio"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_audio_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_audio/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_audio": "autoavsr_audio"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_audio_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_audio/eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_audio": "autoavsr_audio"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "mmtrain_lipcrops_autoavsr_video_eval": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_video/eval.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "autoavsr_video": "autoavsr_video"
     },
     "tags": {
       "role_tag": "role",
@@ -1595,6 +1685,36 @@
       "system_tag": "system"
     }
   },
+  "lipcrops_180hours_omni_audio_train": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/audio_train.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "lipcrops_180hours_omni_audio_val": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/audio_val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "audios": "audios"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
   "lipcrops_180hours_omni_audio_eval": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/audio_eval.parquet",
     "formatting": "sharegpt",
@@ -1746,7 +1866,7 @@
     }
   },
   "ecg_instruct_ptbxl_medgemma_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-Instruct/ptbxl_train.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/ptbxl_train",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1761,7 +1881,7 @@
     }
   },
   "ecg_instruct_ptbxl_medgemma_val": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-Instruct/ptbxl_val.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/ptbxl_val_fixed512",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1776,7 +1896,7 @@
     }
   },
   "ecg_instruct_mimic_medgemma_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-Instruct/mimic_train.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/mimic_train",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1791,22 +1911,7 @@
     }
   },
   "ecg_instruct_mimic_medgemma_val": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-Instruct/mimic_val.parquet",
-    "formatting": "sharegpt",
-    "columns": {
-      "messages": "messages",
-      "medgemma": "medgemma"
-    },
-    "tags": {
-      "role_tag": "role",
-      "content_tag": "content",
-      "user_tag": "user",
-      "assistant_tag": "assistant",
-      "system_tag": "system"
-    }
-  },
-  "ecg_qa_medgemma_smoke": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-QA/debug_smoke_mixed.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/mimic_val_fixed512",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1821,7 +1926,7 @@
     }
   },
   "ecg_qa_ptbxl_paraphrased_medgemma_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-QA/ptbxl_paraphrased_train.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_train",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1836,7 +1941,7 @@
     }
   },
   "ecg_qa_ptbxl_paraphrased_medgemma_valid": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-QA/ptbxl_paraphrased_valid.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/ptbxl_paraphrased_valid.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1851,7 +1956,7 @@
     }
   },
   "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-QA/mimic_iv_ecg_paraphrased_train.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_train",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",
@@ -1866,7 +1971,7 @@
     }
   },
   "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid": {
-    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ECG-QA/mimic_iv_ecg_paraphrased_valid.parquet",
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/mimic_iv_ecg_paraphrased_valid.parquet",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages",

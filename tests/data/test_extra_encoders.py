@@ -301,18 +301,18 @@ def test_pop_encoder_samples_and_group_by_name():
 
 
 VIDEO_SPEC = {
-    "name": "omniavsr_video",
-    "type": "omniavsr",
-    "marker": "<omniavsr_video>",
-    "placeholder_token": "<|omniavsr_video|>",
+    "name": "autoavsr_video",
+    "type": "autoavsr",
+    "marker": "<autoavsr_video>",
+    "placeholder_token": "<|autoavsr_video|>",
     "num_tokens": 80,
     "extra": {"stream": "video"},
 }
 
 
 @pytest.mark.runs_on(["cpu", "mps", "cuda"])
-def test_lipread_marker_expands_to_omniavsr_video_placeholders():
-    tokenizer = _VocabTokenizer({"<|omniavsr_video|>": 3})
+def test_lipread_marker_expands_to_autoavsr_video_placeholders():
+    tokenizer = _VocabTokenizer({"<|autoavsr_video|>": 3})
     messages = [
         {"role": "user", "content": "<audio><lipread>Transcribe the speech from the video."}
     ]
@@ -323,17 +323,17 @@ def test_lipread_marker_expands_to_omniavsr_video_placeholders():
         tokenizer,
     )
     assert out[0]["content"].startswith("<audio>")
-    assert out[0]["content"].count("<|omniavsr_video|>") == 80
+    assert out[0]["content"].count("<|autoavsr_video|>") == 80
     assert "<lipread>" not in out[0]["content"]
 
 
 @pytest.mark.runs_on(["cpu", "mps", "cuda"])
-def test_lipread_column_groups_under_omniavsr_video():
+def test_lipread_column_groups_under_autoavsr_video():
     grouped = samples_by_encoder_name(
-        [{"lipread": "clip_lips.mp4"}, {"omniavsr_video": "other.npy"}, {}],
+        [{"lipread": "clip_lips.mp4"}, {"autoavsr_video": "other.npy"}, {}],
         [VIDEO_SPEC],
     )
-    assert grouped["omniavsr_video"] == ["clip_lips.mp4", "other.npy", None]
+    assert grouped["autoavsr_video"] == ["clip_lips.mp4", "other.npy", None]
 
 
 @pytest.mark.runs_on(["cpu", "mps", "cuda"])

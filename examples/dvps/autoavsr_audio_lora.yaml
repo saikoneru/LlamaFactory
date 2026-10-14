@@ -1,9 +1,10 @@
-### BEN S1GRD + S2L2A, projector full-FT + Thinker LoRA.
-### The projector-only run left the Thinker frozen, so it kept writing
-### chat sentences after the short label. This recipe trains the projector
-### and a rank-16 LoRA on the Thinker, on the same benx_s1s2 data.
+### Projector full fine-tune plus LoRA on the Qwen Thinker text decoder.
+### Auto-AVSR audio stays frozen. The dataset has no video marker or payload.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+
 ### model
-model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_s1s2
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_autoavsr_audio
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -14,14 +15,14 @@ stage: sft
 do_train: true
 finetuning_type: lora
 lora_rank: 16
+lora_alpha: 32
 lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
 additional_target: projectors
 freeze_vision_tower: true
-freeze_multi_modal_projector: false
 
 ### dataset
-dataset: benx_s1s2_train
-eval_dataset: benx_s1s2_val
+dataset: mmtrain_lipcrops_autoavsr_audio_train
+eval_dataset: mmtrain_lipcrops_autoavsr_audio_val
 template: qwen2_omni
 cutoff_len: 2048
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
@@ -38,7 +39,7 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/bentxt_s1s2_lora
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/autoavsr_audio_lora
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
@@ -47,11 +48,11 @@ plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: bentxt-s1s2-lora
+run_name: lipcrops-autoavsr-audio-projectors-lora
 
 ### train
-per_device_train_batch_size: 16
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
 learning_rate: 1.0e-4
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
@@ -60,9 +61,9 @@ ddp_timeout: 180000000
 resume_from_checkpoint: null
 
 ### eval
-per_device_eval_batch_size: 16
+per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 250
+eval_steps: 500
 max_eval_samples: 1024
 load_best_model_at_end: true
 metric_for_best_model: eval_loss

@@ -1,7 +1,10 @@
-### Same mixed MIMIC+BEN projector train as mimic_benx_projectors.yaml,
-### but a 2-GPU / 1-hour slot (separate output dir so it cannot clobber the 4-GPU job).
+### Projector-only ASR SFT with frozen Auto-AVSR audio Conformer.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+### The derived dataset contains no video marker or video payload.
+
 ### model
-model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_autoavsr_audio
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -18,9 +21,8 @@ freeze_language_model: true
 freeze_multi_modal_projector: false
 
 ### dataset
-dataset: mimic_cxr_medgemma_train, benx_terramindl2_omnirgb_train
-mix_strategy: interleave_over
-interleave_probs: 0.5, 0.5
+dataset: mmtrain_lipcrops_autoavsr_audio_train
+eval_dataset: mmtrain_lipcrops_autoavsr_audio_val
 template: qwen2_omni
 cutoff_len: 2048
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
@@ -37,16 +39,16 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/mimic_benx_projectors_2gpu_1h
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/autoavsr_audio
 logging_steps: 10
 save_strategy: steps
-save_steps: 50
-save_total_limit: 2
+save_steps: 500
+save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: phase4-mimic-benx-projectors-2gpu-1h
+run_name: lipcrops-autoavsr-audio-projectors-only
 
 ### train
 per_device_train_batch_size: 1
@@ -56,8 +58,14 @@ lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
-ddp_find_unused_parameters: true
 resume_from_checkpoint: null
 
 ### eval
-eval_strategy: "no"
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5

@@ -1,24 +1,31 @@
-### Phase 4: BEN S2L2A-only with masked S1GRD, projector-only.
-### Qwen Thinker and the mask-capable TerraMind backbone stay frozen.
+### Native Qwen2.5-Omni thinker LoRA on lipcrops video only.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+### No extra encoder. Audio tower, vision tower, and both projectors stay frozen.
+
 ### model
-model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_s1s2
+model_name_or_path: Qwen/Qwen2.5-Omni-7B
 image_max_pixels: 262144
 video_max_pixels: 16384
+video_fps: 2.0
+video_maxlen: 128
+use_audio_in_video: false
 trust_remote_code: true
-low_cpu_mem_usage: false
 
 ### method
 stage: sft
 do_train: true
-finetuning_type: freeze
-freeze_trainable_layers: 0
-freeze_trainable_modules: all
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
 freeze_vision_tower: true
-freeze_language_model: true
-freeze_multi_modal_projector: false
+freeze_multi_modal_projector: true
+freeze_language_model: false
 
 ### dataset
-dataset: mmtrain_bentxt_terramind_train
+dataset: lipcrops_180hours_omni_train
+eval_dataset: lipcrops_180hours_omni_val
 template: qwen2_omni
 cutoff_len: 2048
 dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
@@ -27,28 +34,28 @@ packing: false
 streaming: true
 buffer_size: 128
 preprocessing_batch_size: 128
-preprocessing_num_workers: 1
-dataloader_num_workers: 1
+preprocessing_num_workers: 4
+dataloader_num_workers: 2
 dataloader_drop_last: true
 max_steps: 60000
 accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/qwen25omni-benx-terramind-only-projector-evalsize
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/qwen25_omni_lipcrops_video
 logging_steps: 10
 save_strategy: steps
-save_steps: 250
+save_steps: 500
 save_total_limit: 3
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
-run_name: qwen25omni-benx-terramind-only-projector-evalsize
+run_name: lipcrops-qwen2.5-omni-video-only
 
 ### train
-per_device_train_batch_size: 16
-gradient_accumulation_steps: 1
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
 learning_rate: 1.0e-4
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
@@ -57,13 +64,10 @@ ddp_timeout: 180000000
 resume_from_checkpoint: null
 
 ### eval
-eval_dataset: mmtrain_bentxt_terramind_val
-per_device_eval_batch_size: 16
+per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 250
-max_eval_samples: 250
-
-## early stopping
+eval_steps: 500
+max_eval_samples: 1024
 load_best_model_at_end: true
 metric_for_best_model: eval_loss
 greater_is_better: false

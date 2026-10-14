@@ -10,8 +10,8 @@ The source datasets are never modified. A route is the pair of a prompt
 marker and its parquet payload column:
 
 - BigEarthNet.txt: `<terramind>` + `terramind`
-- LipCrops AV audio: `<omniavsr_audio>` + `omniavsr_audio`
-- LipCrops AV video: `<omniavsr_video>` + `omniavsr_video`
+- LipCrops AV audio: `<autoavsr_audio>` + `autoavsr_audio`
+- LipCrops AV video: `<autoavsr_video>` + `autoavsr_video`
 - RSTeller and GeoChat: `<image>` + `images` (native Qwen vision)
 
 `encoder_views.json` is the source of truth. Custom routes are checked against
@@ -34,6 +34,9 @@ shards instead of duplicating embedded image bytes.
 Existing outputs are skipped. Pass `--overwrite` to replace a generated
 parquet or a non-matching symlink. The last successful materialization writes
 `last_build_report.json` in the output root.
+
+After the Auto-AVSR rename, rebuild the LipCrops views with `--overwrite` so
+their columns and markers change from the previous encoder names.
 
 ## Run only on a CPU allocation
 

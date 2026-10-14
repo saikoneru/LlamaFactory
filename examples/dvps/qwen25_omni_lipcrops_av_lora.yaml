@@ -1,0 +1,74 @@
+### Native Qwen2.5-Omni thinker LoRA on lipcrops audio + video.
+# wandb_entity: DVPS-ai
+# wandb_project: LC-finetuning
+### No extra encoder. Audio tower, vision tower, and both projectors stay frozen.
+
+### model
+model_name_or_path: Qwen/Qwen2.5-Omni-7B
+image_max_pixels: 262144
+video_max_pixels: 16384
+video_fps: 2.0
+video_maxlen: 128
+use_audio_in_video: false
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+freeze_vision_tower: true
+freeze_multi_modal_projector: true
+freeze_language_model: false
+
+### dataset
+dataset: lipcrops_180hours_omni_av_train
+eval_dataset: lipcrops_180hours_omni_av_val
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 4
+dataloader_num_workers: 2
+dataloader_drop_last: true
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/qwen25_omni_lipcrops_av
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+run_name: lipcrops-qwen2.5-omni-audio-video
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5

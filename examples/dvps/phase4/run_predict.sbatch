@@ -12,7 +12,7 @@
 #SBATCH --export=NONE
 #
 # Usage:
-#   sbatch examples/dvps/phase4/run_predict.sbatch examples/dvps/phase4/mimic_medgemma_lora_predict.yaml
+#   sbatch examples/dvps/phase4/run_predict.sbatch <predict-yaml>
 # Then:
 #   bash examples/dvps/phase4/eval_generations.sh <predict_output_dir>/generated_predictions.jsonl
 

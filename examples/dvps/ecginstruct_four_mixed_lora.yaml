@@ -1,0 +1,79 @@
+### Mixed SFT on the ECGInstruct four-encoder checkpoint.
+# wandb_entity: DVPS-ai
+# wandb_project: dvps-fm
+# Submit with: sbatch --mem=180G LLaMA-Factory/examples/dvps/run_train.sbatch <this yaml>
+### Thinker LoRA plus full fine-tune of every extra projector.
+### TerraMind, MedGemma, and both Auto-AVSR towers stay frozen.
+### Each dataset uses one encoder family, so some projectors are idle
+### on a given step (ddp_find_unused_parameters).
+###
+###   benx_s1s2_train                              <terramind> S1GRD + S2L2A
+###   mmtrain_lipcrops_autoavsr_av_train           <autoavsr_audio> + <autoavsr_video>
+###   ecg_qa_ptbxl_paraphrased_medgemma_train      <medgemma>
+
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: all
+additional_target: projectors
+freeze_vision_tower: true
+
+### dataset
+dataset: benx_s1s2_train, mmtrain_lipcrops_autoavsr_av_train, ecg_qa_ptbxl_paraphrased_medgemma_train
+mix_strategy: interleave_over
+interleave_probs: 0.34, 0.33, 0.33
+eval_dataset: benx_s1s2_val, mmtrain_lipcrops_autoavsr_av_val, ecg_qa_ptbxl_paraphrased_medgemma_valid
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/ecginstruct_four_mixed_lora
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+run_name: ecginstruct-four-benx-lipcrops-ecgqa-lora
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: null
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024

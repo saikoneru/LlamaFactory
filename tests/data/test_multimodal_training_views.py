@@ -52,14 +52,33 @@ def messages(content: str):
     ]
 
 
-def test_manifest_matches_checkpoint_encoder_contract():
+def test_manifest_matches_checkpoint_encoder_contract(tmp_path):
     manifest = views.load_json(SCRIPT_PATH.with_name("encoder_views.json"))
+    checkpoint = tmp_path / "config.json"
+    checkpoint.write_text(
+        json.dumps(
+            {
+                "encoders": [
+                    {
+                        "name": "autoavsr_audio",
+                        "marker": "<autoavsr_audio>",
+                    },
+                    {
+                        "name": "autoavsr_video",
+                        "marker": "<autoavsr_video>",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest["checkpoint_config"] = str(checkpoint)
     routes = views.validate_manifest(manifest)
 
     assert routes["terramind"]["marker"] == "<terramind>"
     assert routes["terramind"]["min_modalities"] == 1
-    assert routes["omniavsr_audio"]["column"] == "omniavsr_audio"
-    assert routes["omniavsr_video"]["column"] == "omniavsr_video"
+    assert routes["autoavsr_audio"]["column"] == "autoavsr_audio"
+    assert routes["autoavsr_video"]["column"] == "autoavsr_video"
 
     processor_config = views.load_json(
         Path(routes["terramind"]["checkpoint_config"]).with_name(
@@ -87,20 +106,20 @@ def test_bigearthnet_is_selected_for_materialization():
     assert ben_splits == {"train", "val", "test"}
 
 
-def test_lipcrops_routes_both_streams_to_omniavsr():
+def test_lipcrops_routes_both_streams_to_autoavsr():
     bindings = [
         binding(
-            "omniavsr_audio",
+            "autoavsr_audio",
             "audios",
-            "omniavsr_audio",
-            "<omniavsr_audio>",
+            "autoavsr_audio",
+            "<autoavsr_audio>",
             "<audio>",
         ),
         binding(
-            "omniavsr_video",
+            "autoavsr_video",
             "lipread",
-            "omniavsr_video",
-            "<omniavsr_video>",
+            "autoavsr_video",
+            "<autoavsr_video>",
             "<lipread>",
         ),
     ]
@@ -115,7 +134,7 @@ def test_lipcrops_routes_both_streams_to_omniavsr():
     )
 
     content = rewritten[0]["content"]
-    assert content.startswith("<omniavsr_audio><omniavsr_video>")
+    assert content.startswith("<autoavsr_audio><autoavsr_video>")
     assert "<audio>" not in content
     assert "<lipread>" not in content
 
@@ -177,17 +196,17 @@ def test_output_schema_renames_features_and_preserves_hf_metadata():
     )
     bindings = [
         binding(
-            "omniavsr_audio",
+            "autoavsr_audio",
             "audios",
-            "omniavsr_audio",
-            "<omniavsr_audio>",
+            "autoavsr_audio",
+            "<autoavsr_audio>",
             "<audio>",
         ),
         binding(
-            "omniavsr_video",
+            "autoavsr_video",
             "lipread",
-            "omniavsr_video",
-            "<omniavsr_video>",
+            "autoavsr_video",
+            "<autoavsr_video>",
             "<lipread>",
         ),
     ]
@@ -195,9 +214,9 @@ def test_output_schema_renames_features_and_preserves_hf_metadata():
     output = views.build_output_schema(schema, bindings, ["unused"])
     features = json.loads(output.metadata[views.HF_METADATA_KEY])["info"]["features"]
 
-    assert output.names == ["messages", "omniavsr_audio", "omniavsr_video"]
-    assert set(features) == {"messages", "omniavsr_audio", "omniavsr_video"}
-    assert features["omniavsr_audio"]["_type"] == "Audio"
+    assert output.names == ["messages", "autoavsr_audio", "autoavsr_video"]
+    assert set(features) == {"messages", "autoavsr_audio", "autoavsr_video"}
+    assert features["autoavsr_audio"]["_type"] == "Audio"
 
 
 def write_lipcrops_source(path: Path, user_content: str) -> None:
@@ -218,17 +237,17 @@ def test_rewrite_parquet_is_atomic_and_preserves_metadata_columns(tmp_path):
     write_lipcrops_source(source, "<audio><lipread>Transcribe.")
     bindings = [
         binding(
-            "omniavsr_audio",
+            "autoavsr_audio",
             "audios",
-            "omniavsr_audio",
-            "<omniavsr_audio>",
+            "autoavsr_audio",
+            "<autoavsr_audio>",
             "<audio>",
         ),
         binding(
-            "omniavsr_video",
+            "autoavsr_video",
             "lipread",
-            "omniavsr_video",
-            "<omniavsr_video>",
+            "autoavsr_video",
+            "<autoavsr_video>",
             "<lipread>",
         ),
     ]
@@ -246,10 +265,10 @@ def test_rewrite_parquet_is_atomic_and_preserves_metadata_columns(tmp_path):
 
     assert rows == 1
     assert result[0]["sample_id"] == "sample-1"
-    assert result[0]["omniavsr_audio"] == ["clip.flac"]
-    assert result[0]["omniavsr_video"] == ["clip.mp4"]
+    assert result[0]["autoavsr_audio"] == ["clip.flac"]
+    assert result[0]["autoavsr_video"] == ["clip.mp4"]
     assert result[0]["messages"][0]["content"].startswith(
-        "<omniavsr_audio><omniavsr_video>"
+        "<autoavsr_audio><autoavsr_video>"
     )
 
     invalid = tmp_path / "invalid.parquet"

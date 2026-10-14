@@ -1,9 +1,10 @@
 ### Projector-only SFT on qwen_omni_four with the five real datasets.
 ### Mixed batches skip some encoders, so unused parameters are expected
 ### (ddp_find_unused_parameters). Logs to W&B project dvps-fm.
+# wandb_project: dvps-fm
 ###
 ###   lnqa_train                  native <image>
-###   lipcrops_180hours_av_train  native <audio> + <lipread> → omniavsr_video
+###   lipcrops_180hours_av_train  native <audio> + <lipread> → autoavsr_video
 ###   mimic_cxr_medgemma_train    <medgemma>
 ###   benx_multimodal_test        <terramind> + native RGB
 ###   train_v1                    native <audio> mixed with text-only rows

@@ -1,7 +1,7 @@
 # Phase 4 training configs
 
 Software-first recipes for the first real encoder vs Omni-RGB comparison.
-Do **not** submit the 60k-step jobs until the 2-step debug jobs succeed.
+For a short data-path check, copy a training YAML, set `max_steps: 2`, and submit it with `examples/dvps/run_train.sbatch`.
 
 Launch from this directory, using **this** LLaMA-Factory tree (`python -m llamafactory.cli`), not Sai’s install.
 
@@ -38,29 +38,18 @@ The Omni RGB control (`mimic_cxr_*`) keeps reading the original `<image>` parque
 
 Training YAMLs log **eval_loss** (teacher-forced caption / report NLL) every 500 steps with early stopping.
 
-After a run, generate then score BLEU/ROUGE:
+After a run, generate with `run_predict.sbatch` from a YAML that sets `do_predict: true`, then score BLEU/ROUGE:
 
 ```bash
-sbatch --job-name=mimic_mg_pred examples/dvps/phase4/run_predict.sbatch \
-  examples/dvps/phase4/mimic_medgemma_lora_predict.yaml
 bash examples/dvps/phase4/eval_generations.sh \
-  /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/phase4/mimic_medgemma_lora_predict/generated_predictions.jsonl
+  <predict_output_dir>/generated_predictions.jsonl
 ```
 
 BEN mAP / CheXbert / RadGraph are not wired in LLaMA-Factory. Point those toolkits at the same `generated_predictions.jsonl` when you have them.
 
 ## Submit
 
-2-step data-path check (1 GPU):
-
-```bash
-sbatch --job-name=p4_dbg_mimic examples/dvps/phase4/run_debug.sbatch \
-  examples/dvps/phase4/debug_mimic_medgemma_projector.yaml
-sbatch --job-name=p4_dbg_benx examples/dvps/phase4/run_debug.sbatch \
-  examples/dvps/phase4/debug_benx_terramind_projector.yaml
-```
-
-Full 4-GPU training (after debug is green):
+Full 4-GPU training:
 
 ```bash
 sbatch --job-name=benx_tm_proj examples/dvps/phase4/run_train.sbatch \
