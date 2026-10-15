@@ -186,6 +186,37 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             return super()._maybe_log_save_evaluate(*args, **kwargs)
 
     @override
+    def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval", **gen_kwargs):
+        # eval_on_each_dataset gives one loss per set and no plain eval_loss, which
+        # metric_for_best_model and EarlyStoppingCallback need: add their mean.
+        from transformers import EarlyStoppingCallback
+
+        datasets = eval_dataset if eval_dataset is not None else self.eval_dataset
+        stoppers = []
+        if isinstance(datasets, dict):
+            # Keep early stopping out of the per-set evaluations, which lack eval_loss.
+            stoppers = [cb for cb in self.callback_handler.callbacks if isinstance(cb, EarlyStoppingCallback)]
+            for callback in stoppers:
+                self.callback_handler.remove_callback(callback)
+        try:
+            metrics = super().evaluate(
+                eval_dataset=eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix, **gen_kwargs
+            )
+        finally:
+            for callback in stoppers:
+                self.callback_handler.add_callback(callback)
+
+        loss_key = f"{metric_key_prefix}_loss"
+        if isinstance(datasets, dict) and loss_key not in metrics:
+            losses = [metrics.get(f"{metric_key_prefix}_{name}_loss") for name in datasets]
+            if losses and None not in losses:
+                metrics[loss_key] = float(sum(losses) / len(losses))
+                self.log({loss_key: metrics[loss_key]})
+                for callback in stoppers:
+                    callback.on_evaluate(self.args, self.state, self.control, metrics)
+        return metrics
+
+    @override
     def prediction_step(
         self,
         model: "torch.nn.Module",
