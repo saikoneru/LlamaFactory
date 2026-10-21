@@ -17,6 +17,14 @@ import subprocess
 import sys
 from copy import deepcopy
 
+# Custom Transformers modules must not be populated concurrently in one cache.
+# torchrun sets LOCAL_RANK before executing this module, so isolate the cache
+# before any Transformers-dependent LLaMA Factory modules are imported.
+if "LOCAL_RANK" in os.environ and "HF_MODULES_CACHE" in os.environ:
+    os.environ["HF_MODULES_CACHE"] = os.path.join(
+        os.environ["HF_MODULES_CACHE"], f"rank-{os.environ['LOCAL_RANK']}"
+    )
+
 
 USAGE = (
     "-" * 70
