@@ -98,6 +98,13 @@ llamafactory-cli train examples/datasets/text_to_image_2m/train_omni3b.yaml \
   model_name_or_path=/path/to/omni3b_unilip_connector5
 ```
 
+For the provided CINECA account/environment and dataset snapshot, submit a
+four-GPU, 48-hour job with
+`sbatch examples/datasets/text_to_image_2m/train_cineca.sbatch`.
+It uses `boost_qos_lprod` (normal production is limited to 24 hours), one
+Slurm task launching four torchrun workers, and a distinct output directory
+ending in the job ID. `UNILIP_OUTPUT_DIR` can override that output path.
+
 Alternatively set `data_files` in the dataset entry to explicit local tar
 paths/globs or URLs. Relative paths resolve against `dataset_dir`. To check a
 few local shards, pass `--data-files /absolute/path/to/data_*.tar` to the preview.
