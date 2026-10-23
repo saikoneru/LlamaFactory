@@ -180,6 +180,18 @@ class DataArguments:
         metadata={"help": "Whether or not to use a shared file system for the datasets."},
     )
 
+    unilip_resolution_buckets: str | None = field(
+        default=None,
+        metadata={"help": "Comma-separated HEIGHTxWIDTH UniLIP target buckets; normally inferred from model config."},
+    )
+    unilip_resize_mode: Literal["center_crop", "pad"] = field(
+        default="center_crop",
+        metadata={"help": "Resize image-generation targets to nearest supported bucket."},
+    )
+    unilip_warn_on_resize: bool = field(
+        default=True,
+        metadata={"help": "Log WARNING when a UniLIP target is resized."},
+    )
     terramind_token: str = field(
         default="<|terramind|>",
         metadata={
@@ -258,3 +270,5 @@ class DataArguments:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+# UNILIP_IMAGE_GENERATION_PATCH_V1

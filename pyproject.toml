@@ -75,6 +75,9 @@ dependencies = [
     "sse-starlette",
 ]
 
+[project.optional-dependencies]
+unilip = ["diffusers>=0.32.2,<1.0", "transformers==5.8.0"]
+
 [project.scripts]
 llamafactory-cli = "llamafactory.cli:main"
 lmf = "llamafactory.cli:main"

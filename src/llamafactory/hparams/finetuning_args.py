@@ -566,6 +566,57 @@ class FinetuningArguments(
         default=1.0,
         metadata={"help": "The alpha parameter for EAFT loss to control the power of adaptive weight."},
     )
+    # UniLIP training policy belongs to the training run, not the base checkpoint.
+    unilip_train_mode: Literal["disabled", "frozen", "lora", "full"] = field(
+        default="disabled", metadata={"help": "Train SANA DiT in frozen/LoRA/full mode; disabled leaves ordinary SFT unchanged."},
+    )
+    unilip_train_connector: bool = field(
+        default=True, metadata={"help": "Train active conditioning projection modules and the UniLIP connector when present."},
+    )
+    unilip_projector_only: bool = field(
+        default=False,
+        metadata={"help": "Train only the shared Omni-to-UniLIP output_head with diffusion loss; freeze Qwen, queries, connector, caption projector, and DiT."},
+    )
+    unilip_bridge_only: bool = field(
+        default=False,
+        metadata={"help": "Optimize diffusion loss for queries and active conditioning projections. Direct-query and Omni-connector models also preserve enabled Omni text-decoder LoRA; all base weights freeze."},
+    )
+    unilip_prompt_only: bool = field(
+        default=False,
+        metadata={"help": "Use only the saved non-system prompt text selection for bridge-only training; omit image/query conditioning and freeze unused queries. Saved in the model config."},
+    )
+    unilip_timestep_sampling: Literal["uniform", "high_noise"] = field(
+        default="uniform",
+        metadata={"help": "high_noise cycles through 1000,1000,1000,900,750,500,250,100 (scaled to scheduler length), with fresh noise shared within each image bucket."},
+    )
+    unilip_freeze_pretrained_bridge: bool = field(
+        default=False,
+        metadata={"help": "Freeze the pretrained UniLIP connector and caption projection while preserving the Qwen/LoRA, query and input-projector training policy."},
+    )
+    unilip_train_resolution_tokens: bool = field(
+        default=True, metadata={"help": "Train selected-token adapters on resolution embeddings and output rows."},
+    )
+    unilip_train_projectors: bool = field(
+        default=True, metadata={"help": "Train extra-encoder projectors and optional fusion gates."},
+    )
+    unilip_activation_checkpointing: bool = field(
+        default=True, metadata={"help": "Use non-reentrant layer checkpointing for parallel-query Qwen, connector, and DiT training."},
+    )
+    unilip_checkpoint_segment_size: int = field(
+        default=8, metadata={"help": "Deprecated compatibility option; parallel queries do not use rollout segments."},
+    )
+    unilip_conditioning_tokens_by_resolution: dict[str, int] | None = field(
+        default=None, metadata={"help": "Override continuous state counts by HEIGHTxWIDTH; saved with training checkpoints."},
+    )
+    unilip_lora_rank: int | None = field(default=None, metadata={"help": "UniLIP DiT LoRA rank."})
+    unilip_lora_alpha: float | None = field(default=None, metadata={"help": "UniLIP DiT LoRA alpha."})
+    unilip_lora_dropout: float | None = field(default=None, metadata={"help": "UniLIP DiT LoRA dropout."})
+    unilip_lora_target: str | None = field(
+        default=None, metadata={"help": "Comma-separated UniLIP DiT LoRA module targets."},
+    )
+    unilip_image_loss_weight: float | None = field(
+        default=None, metadata={"help": "Image diffusion loss weight; defaults to model spec or 1.0."},
+    )
     freeze_vision_tower: bool = field(
         default=True,
         metadata={"help": "Whether or not to freeze the vision tower in MLLM training."},
@@ -600,6 +651,22 @@ class FinetuningArguments(
     )
 
     def __post_init__(self):
+        if self.unilip_prompt_only and not self.unilip_bridge_only:
+            raise ValueError("unilip_prompt_only requires unilip_bridge_only: true")
+        if self.unilip_bridge_only:
+            if self.unilip_train_mode != "frozen":
+                raise ValueError("unilip_bridge_only requires unilip_train_mode: frozen")
+            if self.unilip_projector_only or self.unilip_freeze_pretrained_bridge or not self.unilip_train_connector:
+                raise ValueError("unilip_bridge_only requires a trainable connector and cannot combine with other bridge freeze policies")
+        if self.unilip_timestep_sampling not in {"uniform", "high_noise"}:
+            raise ValueError("unilip_timestep_sampling must be uniform or high_noise")
+        if self.unilip_timestep_sampling != "uniform" and self.unilip_train_mode == "disabled":
+            raise ValueError("Custom UniLIP timesteps require an enabled unilip_train_mode")
+        if self.unilip_projector_only and self.unilip_train_mode != "frozen":
+            raise ValueError("unilip_projector_only requires unilip_train_mode: frozen")
+        if self.unilip_freeze_pretrained_bridge and self.unilip_train_mode != "frozen":
+            raise ValueError("unilip_freeze_pretrained_bridge requires unilip_train_mode: frozen")
+
         def split_arg(arg):
             if isinstance(arg, str):
                 return [item.strip() for item in arg.split(",")]
@@ -662,3 +729,5 @@ class FinetuningArguments(
         args = asdict(self)
         args = {k: f"<{k.upper()}>" if k.endswith("api_key") else v for k, v in args.items()}
         return args
+
+# UNILIP_IMAGE_GENERATION_PATCH_V1

@@ -147,12 +147,33 @@ def load_config(model_args: "ModelArguments") -> "PretrainedConfig":
     return config
 
 
+def log_model_parameters(
+    model: "PreTrainedModel", model_args: "ModelArguments", is_trainable: bool = False
+) -> None:
+    """Report the model's current parameter counts and optional trainability details."""
+    trainable_params, all_param = count_parameters(model)
+    if is_trainable:
+        param_stats = (
+            f"trainable params: {trainable_params:,} || "
+            f"all params: {all_param:,} || trainable%: {100 * trainable_params / all_param:.4f}"
+        )
+    else:
+        param_stats = f"all params: {all_param:,}"
+
+    logger.info_rank0(param_stats)
+
+    if model_args.print_param_status and int(os.getenv("LOCAL_RANK", "0")) == 0:
+        for name, param in model.named_parameters():
+            print(f"name: {name}, dtype: {param.dtype}, device: {param.device}, trainable: {param.requires_grad}")
+
+
 def load_model(
     tokenizer: "PreTrainedTokenizer",
     model_args: "ModelArguments",
     finetuning_args: "FinetuningArguments",
     is_trainable: bool = False,
     add_valuehead: bool = False,
+    log_parameters: bool = True,
 ) -> "PreTrainedModel":
     r"""Load pretrained model."""
     init_kwargs = _get_init_kwargs(model_args)
@@ -253,19 +274,7 @@ def load_model(
 
         model = apply_v1_kernels(model, use_v1_kernels=model_args.use_v1_kernels)
 
-    trainable_params, all_param = count_parameters(model)
-    if is_trainable:
-        param_stats = (
-            f"trainable params: {trainable_params:,} || "
-            f"all params: {all_param:,} || trainable%: {100 * trainable_params / all_param:.4f}"
-        )
-    else:
-        param_stats = f"all params: {all_param:,}"
-
-    logger.info_rank0(param_stats)
-
-    if model_args.print_param_status and int(os.getenv("LOCAL_RANK", "0")) == 0:
-        for name, param in model.named_parameters():
-            print(f"name: {name}, dtype: {param.dtype}, device: {param.device}, trainable: {param.requires_grad}")
+    if log_parameters:
+        log_model_parameters(model, model_args, is_trainable)
 
     return model

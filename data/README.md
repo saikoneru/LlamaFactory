@@ -44,6 +44,90 @@ Currently we support datasets in **alpaca** and **sharegpt** format. Allowed fil
 }
 ```
 
+## text-to-image-2M WebDataset
+
+`examples/datasets/text_to_image_2m/` contains a native dataset registration,
+an Omni-3B training config, a CPU preview, and an optional local repacking tool
+for [jackyhate/text-to-image-2M](https://huggingface.co/datasets/jackyhate/text-to-image-2M).
+The CINECA recipe reads the already downloaded `data_512_2M` and
+`data_1024_10K` tar folders through `T2I_2M_ROOT`. It uses Hugging Face's built-in WebDataset reader;
+there is no separate `webdataset` package dependency.
+
+Each record contains `jpg` image bytes and `json.prompt`. The dataset adapter
+uses the caption itself as the user request, matching the demo's prompt field,
+with an assistant response `<res_512x512><unilip>` or `<res_1024x1024><unilip>`, and an independent
+image target. The resolution token follows the actual image dimensions.
+The target is never added to input `images` or to an input `<image>` marker.
+Matching RGB JPEGs keep their original bytes and pixel dimensions. Other sizes
+use the checkpoint's supported bucket/resize policy.
+
+The updated five-layer Omni-3B model explicitly separates output and vision
+encoder sizes, keeping all pretrained codec weights:
+
+| Target and generated output | InternViT input | Latent grid | Resolution token |
+| --- | --- | --- | --- |
+| 512×512 | 448×448 | 16×16 | `<res_512x512>` |
+| 1024×1024 | 896×896 | 32×32 | `<res_1024x1024>` |
+
+This uses the DC-AE decoder's native 32-pixel output stride. Existing models
+without the new `tokenizer_config.output_pixels_per_latent` setting retain
+their previous pixel geometry. The 1024 bucket has four times as many latent
+positions as the 512 bucket and needs more compute and memory.
+
+Run from the LlamaFactory directory:
+
+```bash
+# Install the UniLIP decoder dependency and the validated Transformers version.
+python -m pip install -e '.[unilip]'
+
+# Point to the dataset already downloaded on CINECA. No dataset download is needed.
+export T2I_2M_ROOT=/path/to/staged/text-to-image-2M
+
+# Check tokenizer labels, output targets and mixed-resolution collation on CPU.
+CUDA_VISIBLE_DEVICES="" python examples/datasets/text_to_image_2m/preview.py --samples 2
+
+# The model is loaded from the private skoneru/omni3b-unilip-connector5 repository.
+# Authenticate with Hugging Face on the login node before the first model download.
+llamafactory-cli train examples/datasets/text_to_image_2m/train_omni3b.yaml
+```
+
+To use a previously downloaded local copy of the model:
+
+```bash
+llamafactory-cli train examples/datasets/text_to_image_2m/train_omni3b.yaml \
+  model_name_or_path=/path/to/omni3b_unilip_connector5
+```
+
+Alternatively set `data_files` in the dataset entry to explicit local tar
+paths/globs or URLs. Relative paths resolve against `dataset_dir`. To check a
+few local shards, pass `--data-files /absolute/path/to/data_*.tar` to the preview.
+Omitting `data_files` switches the adapter to upstream streaming URLs; the
+included CINECA manifest explicitly selects local tar files instead.
+Streaming keeps sample shuffling enabled with a bounded per-worker buffer;
+`max_steps` controls run length. `preprocessing_num_workers` does not parallelize
+streaming; `dataloader_num_workers` controls that work.
+
+For efficient distributed loading, the number of shards should divide evenly
+across ranks, with enough shards for the data-loader workers. With the original
+47 shards and typical GPU counts, Hugging Face falls back to sample-level
+partitioning, which is correct but repeats tar reads on different ranks. The
+optional CPU tool creates balanced shards for shard-level partitioning:
+
+```bash
+python examples/datasets/text_to_image_2m/prepare_shards.py \
+  --input "$T2I_2M_ROOT"/data_512_2M/*.tar "$T2I_2M_ROOT"/data_1024_10K/*.tar \
+  --output-dir /path/to/repacked --num-shards 256
+llamafactory-cli train examples/datasets/text_to_image_2m/train_omni3b.yaml \
+  dataset_dir=/path/to/repacked model_name_or_path=/path/to/omni3b_unilip_connector5
+```
+
+Choose a shard count divisible by the total GPU count. Repacking needs storage
+for another copy of the tar data; it copies each JPEG and JSON unchanged and
+writes a ready-to-use `dataset_info.json`. It does not resize or extract images.
+The training profile remains image-loss-only: the resolution token is supplied
+from target metadata. Learning to autonomously predict resolution/trigger tokens
+also requires language-model supervision in a later training profile.
+
 ## Alpaca Format
 
 ### Supervised Fine-Tuning Dataset

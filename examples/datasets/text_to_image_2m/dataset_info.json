@@ -1,0 +1,12 @@
+{
+  "text_to_image_2m": {
+    "webdataset_url": "jackyhate/text-to-image-2M",
+    "formatting": "text_to_image_2m",
+    "data_files": {
+      "train": [
+        "${T2I_2M_ROOT}/data_512_2M/data_*.tar",
+        "${T2I_2M_ROOT}/data_1024_10K/data_*.tar"
+      ]
+    }
+  }
+}

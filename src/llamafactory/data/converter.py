@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Union
 
 from ..extras import logging
 from .data_utils import Role
+from .dataset_adapters.text_to_image_2m import TextToImage2MDatasetConverter
 
 import io
 
@@ -356,9 +357,25 @@ class SharegptDatasetConverter(DatasetConverter):
             prompt = aligned_messages[:-1]
             response = aligned_messages[-1:]
 
+        # Parse assistant <unilip>, choose a target size bucket, and store
+        # Arrow-safe processed PNG bytes. Normal ShareGPT rows are untouched.
+        unilip_target = None
+        if (not broken_data and not self.dataset_attr.ranking and
+                (self.dataset_attr.target_image or
+                 (response and "<unilip>" in response[-1].get("content", "")))):
+            from .unilip_generation import convert_sharegpt_target
+            unilip_target = convert_sharegpt_target(
+                response,
+                example.get(self.dataset_attr.target_image) if self.dataset_attr.target_image else None,
+                media_dir=self.data_args.media_dir,
+                buckets=self.data_args.unilip_resolution_buckets,
+                resize_mode=self.data_args.unilip_resize_mode,
+                warn_on_resize=self.data_args.unilip_warn_on_resize,
+            )
         output = {
             "_prompt": prompt,
             "_response": response,
+            "_unilip_target": unilip_target,
             "_system": system,
             "_tools": example[self.dataset_attr.tools] if self.dataset_attr.tools else "",
             "_images": self._normalize_images(example[self.dataset_attr.images]) if self.dataset_attr.images else None,
@@ -514,6 +531,7 @@ DATASET_CONVERTERS = {
     "alpaca": AlpacaDatasetConverter,
     "sharegpt": SharegptDatasetConverter,
     "openai": OpenAIDatasetConverter,
+    "text_to_image_2m": TextToImage2MDatasetConverter,
 }
 
 
@@ -562,9 +580,12 @@ def align_dataset(
         )
 
     dataset_converter = get_dataset_converter(dataset_attr.formatting, dataset_attr, data_args)
+    if getattr(dataset_converter, "features", None) is not None:
+        kwargs["features"] = dataset_converter.features
     return dataset.map(
         dataset_converter,
         batched=False,
         remove_columns=column_names,
         **kwargs,
     )
+# UNILIP_IMAGE_GENERATION_PATCH_V1

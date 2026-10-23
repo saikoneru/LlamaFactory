@@ -1,0 +1,46 @@
+# Run from LlamaFactory; set T2I_2M_ROOT to the existing CINECA dataset directory.
+# Targets are outputs, never input images. No dataset download is needed.
+model_name_or_path: skoneru/omni3b-unilip-connector5
+trust_remote_code: true
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_target: all
+lora_rank: 16
+lora_alpha: 32
+freeze_multi_modal_projector: true
+ddp_find_unused_parameters: false
+
+unilip_train_mode: frozen
+unilip_bridge_only: true
+unilip_train_resolution_tokens: false
+unilip_timestep_sampling: high_noise
+unilip_activation_checkpointing: true
+disable_gradient_checkpointing: true
+unilip_warn_on_resize: false
+
+optim: adamw_torch_fused
+learning_rate: 2.0e-5
+lr_scheduler_type: constant
+max_steps: 20000
+bf16: true
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 4
+
+dataset_dir: examples/datasets/text_to_image_2m
+dataset: text_to_image_2m
+streaming: true
+# Aligned targets are encoded images, so keep the per-worker shuffle buffer bounded.
+buffer_size: 256
+template: qwen2_omni
+cutoff_len: 2048
+preprocessing_batch_size: 8
+dataloader_num_workers: 2
+use_stateful_dataloader: true
+
+output_dir: saves/omni3b_unilip_text_to_image_2m
+logging_steps: 10
+save_steps: 500
+save_total_limit: 2
+plot_loss: true
+report_to: wandb

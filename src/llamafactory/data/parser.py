@@ -29,21 +29,23 @@ class DatasetAttr:
     r"""Dataset attributes."""
 
     # basic configs
-    load_from: Literal["hf_hub", "ms_hub", "om_hub", "script", "file"]
+    load_from: Literal["hf_hub", "ms_hub", "om_hub", "script", "file", "cloud_file", "webdataset"]
     dataset_name: str
-    formatting: Literal["alpaca", "sharegpt", "openai"] = "alpaca"
+    formatting: Literal["alpaca", "sharegpt", "openai", "text_to_image_2m"] = "alpaca"
     ranking: bool = False
     # extra configs
     subset: str | None = None
     split: str = "train"
     folder: str | None = None
     num_samples: int | None = None
+    data_files: str | list[str] | dict[str, str | list[str]] | None = None
     # common columns
     system: str | None = None
     tools: str | None = None
     images: str | None = None
     videos: str | None = None
     audios: str | None = None
+    target_image: str | None = None
     terramind: str | None = None
     encoder_columns: dict[str, str] | None = None
     # dpo columns
@@ -79,10 +81,11 @@ class DatasetAttr:
         self.set_attr("split", attr, default="train")
         self.set_attr("folder", attr)
         self.set_attr("num_samples", attr)
+        self.set_attr("data_files", attr)
 
         if "columns" in attr:
             column_names = ["prompt", "query", "response", "history", "messages", "system", "tools"]
-            column_names += ["images", "videos", "audios", "chosen", "rejected", "kto_tag"]
+            column_names += ["images", "videos", "audios", "target_image", "chosen", "rejected", "kto_tag"]
             for column_name in column_names:
                 self.set_attr(column_name, attr["columns"])
             extra = encoder_columns_from_config(attr["columns"])
@@ -145,7 +148,9 @@ def get_dataset_list(
         has_ms_url = "ms_hub_url" in dataset_info[name]
         has_om_url = "om_hub_url" in dataset_info[name]
 
-        if has_hf_url or has_ms_url or has_om_url:
+        if "webdataset_url" in dataset_info[name]:
+            dataset_attr = DatasetAttr("webdataset", dataset_name=dataset_info[name]["webdataset_url"])
+        elif has_hf_url or has_ms_url or has_om_url:
             if has_ms_url and (use_modelscope() or not has_hf_url):
                 dataset_attr = DatasetAttr("ms_hub", dataset_name=dataset_info[name]["ms_hub_url"])
             elif has_om_url and (use_openmind() or not has_hf_url):
@@ -163,3 +168,5 @@ def get_dataset_list(
         dataset_list.append(dataset_attr)
 
     return dataset_list
+
+# UNILIP_IMAGE_GENERATION_PATCH_V1

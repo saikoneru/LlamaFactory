@@ -24,9 +24,12 @@ from ...extras.misc import calculate_tps
 from ...extras.packages import is_transformers_version_greater_than
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
+from ...model.loader import log_model_parameters
 from ..trainer_utils import create_modelcard_and_push, create_ref_model
 from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 from .trainer import CustomSeq2SeqTrainer
+from .unilip_trainer import UniLIPSeq2SeqTrainer
+from .unilip_training import configure_unilip_training
 from ..stateful_dataloader import build_stateful_data_config
 
 
@@ -49,10 +52,51 @@ def run_sft(
 ):
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
+    if finetuning_args.unilip_train_mode != "disabled":
+        if data_args.packing or data_args.neat_packing:
+            raise ValueError("UniLIP image training requires packing: false")
+        # Trainer.remove_unused_columns would otherwise discard the target
+        # before our image-aware collator sees it.
+        training_args.remove_unused_columns = False
+        if training_args.predict_with_generate:
+            raise ValueError("UniLIP image training currently requires predict_with_generate: false")
+        # Configure Qwen/connector/DiT checkpointing together after root PEFT.
+        # Standard Trainer checkpointing is compatible with parallel queries.
+        if training_args.gradient_checkpointing:
+            training_args.gradient_checkpointing_kwargs = {"use_reentrant": False}
+        model_args.disable_gradient_checkpointing = True
+        # Read the buckets from the CHECKPOINT SPEC, never an independent list.
+        from ...model.loader import load_config
+        composite_config = load_config(model_args)
+        decoder_config = getattr(composite_config, "vision_decoder", None)
+        if not decoder_config or decoder_config.get("type") != "unilip":
+            raise ValueError("Image training requested but checkpoint has no UniLIP decoder")
+        policy = decoder_config.get("resolution_policy", {})
+        sizes = policy.get("supported_sizes") or []
+        if not sizes:
+            raise ValueError("UniLIP checkpoint does not specify validated resolution_policy.supported_sizes")
+        data_args.unilip_resolution_buckets = ",".join(f"{int(h)}x{int(w)}" for h,w in sizes)
+        data_args.unilip_resize_mode = policy.get("resize_mode", "center_crop")
+        data_args.unilip_warn_on_resize = data_args.unilip_warn_on_resize and bool(policy.get("warn_on_resize", True))
+        for h,w in sizes:
+            token = f"<res_{int(h)}x{int(w)}>"
+            if token not in tokenizer.get_vocab():
+                raise ValueError(f"Checkpoint tokenizer missing UniLIP resolution token: {token}")
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
     dataset_module = get_dataset(template, model_args, data_args, training_args, stage="sft", **tokenizer_module)
-    model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
+    uses_unilip_training = finetuning_args.unilip_train_mode != "disabled" and training_args.do_train
+    model = load_model(
+        tokenizer, model_args, finetuning_args, training_args.do_train,
+        log_parameters=not uses_unilip_training,
+    )
 
+    if uses_unilip_training:
+        unilip_checkpoint = training_args.resume_from_checkpoint
+        if not unilip_checkpoint and model_args.adapter_name_or_path:
+            unilip_checkpoint = model_args.adapter_name_or_path[-1]
+        model = configure_unilip_training(model, finetuning_args, checkpoint_dir=unilip_checkpoint)
+        # Count after DiT adapters, queries, connector, and resolution rows are configured.
+        log_model_parameters(model, model_args, is_trainable=True)
     ref_model = None
     if finetuning_args.use_asft_loss:
         ref_model = create_ref_model(model_args, finetuning_args)
@@ -60,7 +104,11 @@ def run_sft(
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
 
-    data_collator = SFTDataCollatorWith4DAttentionMask(
+    collator_cls = SFTDataCollatorWith4DAttentionMask
+    if finetuning_args.unilip_train_mode != "disabled":
+        from ...data.unilip_generation import UniLIPDataCollatorWith4DAttentionMask
+        collator_cls = UniLIPDataCollatorWith4DAttentionMask
+    data_collator = collator_cls(
         template=template,
         model=model if not training_args.predict_with_generate else None,
         pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
@@ -104,7 +152,10 @@ def run_sft(
     gen_kwargs["pad_token_id"] = tokenizer.pad_token_id
 
     # Initialize our Trainer
-    trainer = CustomSeq2SeqTrainer(
+    trainer_cls = (UniLIPSeq2SeqTrainer
+                   if finetuning_args.unilip_train_mode != "disabled"
+                   else CustomSeq2SeqTrainer)
+    trainer = trainer_cls(
         model=model,
         args=training_args,
         finetuning_args=finetuning_args,
@@ -133,6 +184,8 @@ def run_sft(
         trainer.save_state()
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
             keys = ["loss"]
+            if uses_unilip_training:
+                keys += ["text_loss", "image_loss"]
             if isinstance(dataset_module.get("eval_dataset"), dict):
                 keys += sum(
                     [[f"eval_{key}_loss", f"eval_{key}_accuracy"] for key in dataset_module["eval_dataset"].keys()], []
@@ -161,3 +214,5 @@ def run_sft(
 
     # Create model card
     create_modelcard_and_push(trainer, model_args, data_args, training_args, finetuning_args)
+
+# UNILIP_IMAGE_GENERATION_PATCH_V1

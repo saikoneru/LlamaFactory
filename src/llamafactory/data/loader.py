@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Literal, Optional, Union
 
 import numpy as np
 from datasets import Dataset, DatasetDict, IterableDataset, load_dataset, load_from_disk
+from datasets import Features, Image, List, Value
 
 from ..extras import logging
 from ..extras.constants import FILEEXT2TYPE
@@ -71,6 +72,12 @@ def _load_single_dataset(
 
     elif dataset_attr.load_from == "cloud_file":
         data_path = dataset_attr.dataset_name
+
+    elif dataset_attr.load_from == "webdataset":
+        from .dataset_adapters.text_to_image_2m import resolve_data_files
+
+        data_path = "webdataset"
+        data_files = resolve_data_files(dataset_attr, data_args.dataset_dir)
 
     elif dataset_attr.load_from == "file":
         local_path = os.path.join(data_args.dataset_dir, dataset_attr.dataset_name)
@@ -157,6 +164,9 @@ def _load_single_dataset(
             num_proc=None if data_args.streaming else data_args.preprocessing_num_workers,
             streaming=data_args.streaming,
         )
+        if dataset_attr.load_from == "webdataset" and dataset_attr.formatting == "text_to_image_2m":
+            # Preserve encoded JPEG bytes; the target converter decodes once.
+            dataset = dataset.cast_column("jpg", Image(decode=False))
         if data_args.streaming and dataset_attr.load_from == "file" and not isinstance(dataset, IterableDataset):
             num_shards = training_args.dataloader_num_workers
 
@@ -291,11 +301,41 @@ def _get_preprocessed_dataset(
             desc="Running tokenizer on dataset",
         )
 
+    # Explicit tokenized dataset schema.
+    # Never infer the images column from a worker's first batch.
+    if (stage == "sft" and not data_args.packing and dataset.features is not None
+            and "_unilip_target" in dataset.features):
+        image_feature = List({
+            "bytes": Value("binary"),
+            "path": Value("string"),
+        })
+
+        target_feature = {
+            "bytes": Value("binary"),
+            "height": Value("int64"),
+            "width": Value("int64"),
+        }
+
+        output_features = Features({
+            "input_ids": List(Value("int64")),
+            "attention_mask": List(Value("int64")),
+            "labels": List(Value("int64")),
+            "images": image_feature,
+            "videos": dataset.features["_videos"],
+            "audios": dataset.features["_audios"],
+            "encoders": dataset.features["_encoders"],
+            "terramind": dataset.features["_terramind"],
+            "unilip_target": target_feature,
+        })
+    else:
+        output_features = None
+
     dataset = dataset.map(
         maybe_wrap_fn(dataset_processor.preprocess_dataset, "data/map_batch"),
         batched=True,
         batch_size=data_args.preprocessing_batch_size,
         remove_columns=column_names,
+        features=output_features,
         **kwargs,
     )
 

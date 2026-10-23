@@ -129,6 +129,41 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
         features["position_ids"] = pos.unsqueeze(0).unsqueeze(0).expand(3, bsz, seq_len).contiguous()
         features["rope_deltas"] = torch.zeros(bsz, 1, device=features["input_ids"].device, dtype=torch.long)
 
+    def _has_real_unilip_image_tokens(self, features: dict[str, "torch.Tensor"]) -> bool:
+        """Distinguish source-image positions from masked dummy images.
+
+        LLaMA-Factory adds a white fake image to some image-free batches to keep
+        Qwen's multimodal processor compatible. Such positions MUST NOT count
+        as real image conditioning. Only valid native image-token positions do.
+        """
+        model = self.model
+        if getattr(getattr(model, "config", None), "model_type", None) != "qwen2_5_omni_composite":
+            return False
+        decoder = getattr(model, "vision_decoder", None)
+        if decoder is None or "image" not in decoder.spec.get("conditioning_sources", ["queries"]):
+            return False
+        thinker = getattr(getattr(model, "qwen", None), "thinker", None)
+        image_token_id = getattr(getattr(thinker, "config", None), "image_token_id", None)
+        if image_token_id is None:
+            raise RuntimeError("UniLIP native-image conditioning needs Qwen Thinker's image_token_id")
+        return bool(((features["input_ids"] == int(image_token_id)) &
+                     features["attention_mask"].bool()).any().item())
+
+    @staticmethod
+    def _pad_mm_token_type_ids(mm_inputs, input_ids, padding_side):
+        """Match tokenizer's final pad-to-multiple length, not only max raw length."""
+        types = mm_inputs.get("mm_token_type_ids")
+        if types is None:
+            return
+        if types.ndim != 2 or types.size(0) != input_ids.size(0):
+            raise ValueError("mm_token_type_ids must be (batch, sequence_length)")
+        missing = input_ids.size(1) - types.size(1)
+        if missing < 0:
+            raise ValueError("mm_token_type_ids is longer than padded input_ids")
+        if missing:
+            pad = (0, missing) if padding_side == "right" else (missing, 0)
+            mm_inputs["mm_token_type_ids"] = F.pad(types, pad, value=0)
+
     def _compute_rope_position_ids(self, features: dict[str, "torch.Tensor"], mm_inputs: dict[str, Any]) -> None:
         rope_index_kwargs = {
             "input_ids": features["input_ids"],
@@ -145,8 +180,13 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             return
 
         if "mm_token_type_ids" in inspect.signature(self.get_rope_func).parameters:
+            native = getattr(getattr(getattr(self.model, "qwen", None), "thinker", None), "config", None)
             image_token_id = getattr(self.model.config, "image_token_id", None)
             video_token_id = getattr(self.model.config, "video_token_id", None)
+            if image_token_id is None and native is not None:
+                image_token_id = getattr(native, "image_token_id", None)
+            if video_token_id is None and native is not None:
+                video_token_id = getattr(native, "video_token_id", None)
             if image_token_id is not None or video_token_id is not None:
                 mm_token_type_ids = torch.zeros_like(features["input_ids"])
                 if image_token_id is not None:
@@ -154,6 +194,11 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
                 if video_token_id is not None:
                     mm_token_type_ids[features["input_ids"] == video_token_id] = 2
                 rope_index_kwargs["mm_token_type_ids"] = mm_token_type_ids
+
+        if self._has_real_unilip_image_tokens(features) and mm_inputs.get("image_grid_thw") is None:
+            raise ValueError(
+                "Real source-image tokens found for UniLIP image conditioning, but image_grid_thw is missing."
+            )
 
         if "second_per_grid_ts" in mm_inputs:
             rope_index_kwargs["second_per_grid_ts"] = mm_inputs.get("second_per_grid_ts")
@@ -170,6 +215,11 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
             try:
                 features["position_ids"], rope_deltas = self.get_rope_func(**rope_index_kwargs)
             except (IndexError, RuntimeError) as e:
+                if self._has_real_unilip_image_tokens(features):
+                    raise RuntimeError(
+                        "Qwen-Omni MRoPE computation failed for real UniLIP source-image tokens. "
+                        "Do not replace their spatial positions with flat RoPE."
+                    ) from e
                 self._rope_logger.warning("get_rope_index mismatch (omni), fallback: %s", e)
                 self._fallback_rope_position_ids(features)
                 return
@@ -512,6 +562,11 @@ class MultiModalDataCollatorForSeq2Seq(DataCollatorForSeq2Seq):
 
         with nvtx_range("data/collate/pad"):
             features: dict[str, torch.Tensor] = super().__call__(features)
+
+        # mm_token_type_ids are prepared before DataCollatorForSeq2Seq pads to a
+        # multiple of 8. The native token types must match the final sequence
+        # exactly (including dummy-media and padding positions).
+        self._pad_mm_token_type_ids(mm_inputs, features["input_ids"], self.tokenizer.padding_side)
 
         # Extra encoders: generic ``encoder_inputs`` for the composite; legacy
         # ``terramind_pixel_values`` only for the old TerraMind wrapper.

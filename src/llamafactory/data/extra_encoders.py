@@ -33,6 +33,7 @@ STANDARD_COLUMN_KEYS = {
     "chosen",
     "rejected",
     "kto_tag",
+    "target_image",
 }
 
 COMPOSITE_ENCODER_MODEL_TYPES = {

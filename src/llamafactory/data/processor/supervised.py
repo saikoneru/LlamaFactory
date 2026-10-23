@@ -227,10 +227,17 @@ class SupervisedDatasetProcessor(DatasetProcessor):
                 continue
 
             input_ids, labels = encoded
+            targets = examples.get("_unilip_target")
+            unilip_target = targets[i] if targets is not None else None
+            if unilip_target is not None:
+                from ..unilip_generation import validate_image_labels
+                trigger_id = self.tokenizer.convert_tokens_to_ids("<unilip>")
+                input_ids, labels = validate_image_labels(input_ids, labels, trigger_id)
+            model_inputs["unilip_target"].append(unilip_target)
             model_inputs["input_ids"].append(input_ids)
             model_inputs["attention_mask"].append([1] * len(input_ids))
             model_inputs["labels"].append(labels)
-            model_inputs["images"].append(examples["_images"][i])
+            model_inputs["images"].append(examples["_images"][i] or [])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
             model_inputs["encoders"].append(encoder_samples)
@@ -249,6 +256,8 @@ class SupervisedDatasetProcessor(DatasetProcessor):
 @dataclass
 class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
     def preprocess_dataset(self, examples: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        if any(target is not None for target in (examples.get("_unilip_target") or [])):
+            raise ValueError("Packing is not supported for UniLIP image-generation targets. Set packing: false.")
         # TODO: use `position_ids` to achieve packing
         # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
         # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
@@ -372,3 +381,4 @@ class PackedSupervisedDatasetProcessor(SupervisedDatasetProcessor):
             model_inputs["audios"].append(packed_audios or None)
 
         return model_inputs
+# UNILIP_IMAGE_GENERATION_PATCH_V1
