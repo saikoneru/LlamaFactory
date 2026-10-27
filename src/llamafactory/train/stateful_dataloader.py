@@ -5,6 +5,7 @@ from datasets.distributed import split_dataset_by_node
 from torch.utils.data import DistributedSampler, RandomSampler, SequentialSampler
 from torchdata.stateful_dataloader import StatefulDataLoader
 
+from ..data.data_utils import _PythonMix
 from ..extras.nvtx import maybe_wrap_fn
 import hashlib
 import json
@@ -51,6 +52,15 @@ def validate_stateful_dataloader_support(trainer):
         raise ValueError("StatefulDataLoader is not currently supported with FSDP.")
 
 
+def get_mixed_snapshot_interval(args):
+    save_strategy = getattr(args.save_strategy, "value", args.save_strategy)
+    save_steps = args.save_steps
+    if save_strategy != "steps" or save_steps is None or save_steps < 1:
+        return 1
+
+    return int(save_steps) * args.gradient_accumulation_steps
+
+
 def create_stateful_train_dataloader(trainer):
     validate_stateful_dataloader_support(trainer)
     train_dataset = trainer.train_dataset
@@ -63,6 +73,12 @@ def create_stateful_train_dataloader(trainer):
         if trainer.args.world_size > 1:
             train_dataset = split_dataset_by_node(
                 train_dataset,
+                rank=trainer.args.process_index,
+                world_size=trainer.args.world_size,
+            )
+    elif isinstance(train_dataset, _PythonMix):
+        if trainer.args.world_size > 1:
+            train_dataset = train_dataset.shard_by_node(
                 rank=trainer.args.process_index,
                 world_size=trainer.args.world_size,
             )
@@ -96,6 +112,10 @@ def create_stateful_train_dataloader(trainer):
 
     if trainer.args.dataloader_num_workers > 0:
         dataloader_params["prefetch_factor"] = trainer.args.dataloader_prefetch_factor
+
+    if isinstance(train_dataset, _PythonMix):
+        # Mixed-encoder state holds raw shuffle-buffer rows, so snapshot only at checkpoint steps.
+        dataloader_params["snapshot_every_n_steps"] = get_mixed_snapshot_interval(trainer.args)
 
     multiprocessing_context = getattr(trainer.args, "dataloader_multiprocessing_context", None)
     if multiprocessing_context is not None:
