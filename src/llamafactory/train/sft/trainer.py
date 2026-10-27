@@ -188,7 +188,8 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
     @override
     def evaluate(self, eval_dataset=None, ignore_keys=None, metric_key_prefix="eval", **gen_kwargs):
         # eval_on_each_dataset gives one loss per set and no plain eval_loss, which
-        # metric_for_best_model and EarlyStoppingCallback need: add their mean.
+        # metric_for_best_model and EarlyStoppingCallback need: add their mean, weighted
+        # by eval_interleave_probs when given.
         from transformers import EarlyStoppingCallback
 
         datasets = eval_dataset if eval_dataset is not None else self.eval_dataset
@@ -209,8 +210,12 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         loss_key = f"{metric_key_prefix}_loss"
         if isinstance(datasets, dict) and loss_key not in metrics:
             losses = [metrics.get(f"{metric_key_prefix}_{name}_loss") for name in datasets]
-            if losses and None not in losses:
-                metrics[loss_key] = float(sum(losses) / len(losses))
+            weights = getattr(self, "_eval_loss_weights", None) or {}
+            weights = [weights.get(name) for name in datasets]
+            if None in weights:
+                weights = [1.0] * len(losses)
+            if losses and None not in losses and sum(weights) > 0:
+                metrics[loss_key] = float(sum(w * loss for w, loss in zip(weights, losses)) / sum(weights))
                 self.log({loss_key: metrics[loss_key]})
                 for callback in stoppers:
                     callback.on_evaluate(self.args, self.state, self.control, metrics)
