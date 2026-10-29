@@ -470,6 +470,7 @@ def _is_null_feature(feature: Any) -> bool:
 
 def _unify_mm_features_for_mix(
     all_datasets: list[Union["Dataset", "IterableDataset"]],
+    resolve: bool = True,
 ) -> list[Union["Dataset", "IterableDataset"]]:
     r"""Make image columns mixable across path-based and bytes-based sources.
 
@@ -478,12 +479,15 @@ def _unify_mm_features_for_mix(
     `List({bytes: binary, path: null})`. `interleave_datasets` then refuses to align them.
     Recasting to `List(Image(decode=False))` keeps both representations and leaves decoding
     to LlamaFactory's collator.
+
+    With ``resolve=False`` only datasets whose features are already known are recast.
+    Inference builds a PyArrow table from a sample and cannot type decoded PIL values.
     """
     image_feature = List(Image(decode=False))
     unified = []
     for dataset in all_datasets:
         resolve_features = getattr(dataset, "_resolve_features", None)
-        if callable(resolve_features):
+        if resolve and callable(resolve_features):
             dataset = resolve_features()
 
         features = getattr(dataset, "features", None)
@@ -521,7 +525,8 @@ def merge_dataset(
     if len(all_datasets) == 1:
         return all_datasets[0]
 
-    all_datasets = _unify_mm_features_for_mix(all_datasets)
+    use_python_mix = data_args.mix_strategy.startswith("interleave") and requires_python_mix(encoder_schemas)
+    all_datasets = _unify_mm_features_for_mix(all_datasets, resolve=not use_python_mix)
 
     if data_args.mix_strategy == "concat":
         if data_args.streaming:
@@ -539,7 +544,7 @@ def merge_dataset(
             "interleave_once": "all_exhausted_without_replacement",
         }[data_args.mix_strategy]
         probabilities = data_args.eval_interleave_probs if is_eval else data_args.interleave_probs
-        if not requires_python_mix(encoder_schemas):
+        if not use_python_mix:
             return interleave_datasets(
                 datasets=all_datasets,
                 probabilities=probabilities,
