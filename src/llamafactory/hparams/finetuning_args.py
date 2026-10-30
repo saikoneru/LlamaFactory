@@ -578,6 +578,15 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to freeze the language model in MLLM training."},
     )
+    qwen_encoder_lora: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "For Qwen2.5-Omni composite models, also apply LoRA to the Thinker's native vision blocks "
+                "and audio encoder layers. Extra encoders stay frozen."
+            )
+        },
+    )
     compute_accuracy: bool = field(
         default=False,
         metadata={"help": "Whether or not to compute the token-level accuracy at evaluation."},

@@ -84,7 +84,12 @@ class DataArguments:
     )
     eval_interleave_probs: str | None = field(
         default=None,
-        metadata={"help": "Probabilities to sample data from evaluation datasets. Use commas to separate multiple datasets."},
+        metadata={
+            "help": (
+                "Probabilities to sample data from evaluation datasets. Use commas to separate multiple datasets. "
+                "With `eval_on_each_dataset`, they weight the per-dataset losses in the aggregated `eval_loss`."
+            )
+        },
     )
     overwrite_cache: bool = field(
         default=False,
@@ -225,12 +230,15 @@ class DataArguments:
                 raise ValueError("The length of dataset and interleave probs should be identical.")
         
         if self.eval_interleave_probs is not None:
-            if self.mix_strategy == "concat":
+            if self.mix_strategy == "concat" and not self.eval_on_each_dataset:
                 raise ValueError("`eval_interleave_probs` is only valid for interleaved mixing.")
         
             self.eval_interleave_probs = list(map(float, split_arg(self.eval_interleave_probs)))
             if self.eval_dataset is not None and len(self.eval_dataset) != len(self.eval_interleave_probs):
                 raise ValueError("The length of eval dataset and eval interleave probs should be identical.")
+
+            if any(prob < 0 for prob in self.eval_interleave_probs) or sum(self.eval_interleave_probs) <= 0:
+                raise ValueError("`eval_interleave_probs` must be non-negative with a positive sum.")
 
         if self.streaming and self.val_size > 1e-6 and self.val_size < 1:
             raise ValueError("Streaming mode should have an integer val size.")

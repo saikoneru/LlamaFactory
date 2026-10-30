@@ -1,0 +1,115 @@
+### [E4-QE] [Checkpoint C4-QE] E4 plus LoRA R=64 on Qwen's native vision and audio towers.
+### TerraMind, MedGemma and Auto-AVSR stay frozen. LoRA goes on the Qwen Thinker
+### text decoder (q/k/v/o/gate/up/down) and on every Linear in qwen.thinker.visual.blocks
+### and qwen.thinker.audio_tower.layers; the projectors are fully fine-tuned via
+### additional_target. Each dataset uses one encoder family, so some
+### projectors are idle on a given step (ddp_find_unused_parameters).
+### Batch: 8 per device x 4 GPUs x 1 accumulation = 32 per node, 128 total.
+### No early stopping: train 48h (one sbatch), evaluate, then resume for
+### another 48h from the last checkpoint if the loss curves justify it.
+# wandb_entity: DVPS-ai
+# wandb_project: dvps-fm
+# Submit with:
+#   sbatch --job-name=dvps_e4_c4_qe examples/dvps/run_train.sbatch <this yaml> dvps-fm
+###
+### Weights are the DVPS mix renormalised to 1 (AMI has no registered dataset yet):
+###   Geo-Intelligence (0.30)
+###     0.14  benx_s1s2_train                                   <terramind> S1GRD + S2L2A
+###     0.06  mmtrain_geochat_qwen_train                        native <image>
+###     0.05  rsvqa_hr_train                                    native <image>
+###     0.05  mmtrain_rsteller_qwen_train                       native <image>
+###   Language Communication (0.32, 0.28 without AMI)
+###     0.07  aya_train                                         text-only
+###     0.04  mmtrain_lipcrops_autoavsr_av_train                <autoavsr_audio> + <autoavsr_video>
+###     0.04  AMI                                               not registered, skipped
+###     0.10  audio_flan_slu_train                              native <audio>
+###     0.07  speech2latex_{sentences,equations}_train          native <audio>, 0.035 each
+###   Cardiology (0.32)
+###     0.12  ecg_qa_{ptbxl,mimic_iv_ecg}_paraphrased_medgemma  <medgemma>, 0.06 each
+###     0.09  ecg_instruct_{ptbxl,mimic}_medgemma_train         <medgemma>, 0.045 each
+###     0.04  acdc_medgemma_train                               <medgemma>
+###     0.04  mnm2_medgemma_train                               <medgemma>
+###     0.03  emidec_medgemma_train                             <medgemma>
+###   General-purpose (0.05)
+###     0.05  lnqa_train                                        native <image>
+
+### model
+model_name_or_path: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 64
+lora_alpha: 128
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+qwen_encoder_lora: true
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: benx_s1s2_train, mmtrain_geochat_qwen_train, rsvqa_hr_train, mmtrain_rsteller_qwen_train, aya_train, mmtrain_lipcrops_autoavsr_av_train, audio_flan_slu_train, speech2latex_sentences_train, speech2latex_equations_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train, acdc_medgemma_train, mnm2_medgemma_train, emidec_medgemma_train, lnqa_train
+mix_strategy: interleave_over
+interleave_probs: 0.14, 0.06, 0.05, 0.05, 0.07, 0.13, 0.08, 0.03, 0.03, 0.06, 0.06, 0.04, 0.04, 0.04, 0.04, 0.03, 0.05
+# Speech2LaTeX has no validation split; its test splits are used for loss monitoring only.
+eval_dataset: benx_s1s2_val, mmtrain_geochat_qwen_val, rsvqa_hr_val, mmtrain_rsteller_qwen_eval, aya_val, mmtrain_lipcrops_autoavsr_av_val, audio_flan_slu_val, speech2latex_sentences_test, speech2latex_equations_test, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_instruct_mimic_medgemma_val_fixed, acdc_medgemma_val, mnm2_medgemma_val, emidec_medgemma_val, lnqa_val
+eval_interleave_probs: 0.14, 0.06, 0.05, 0.05, 0.07, 0.13, 0.08, 0.03, 0.03, 0.06, 0.06, 0.04, 0.04, 0.04, 0.04, 0.03, 0.05
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 2048
+dataset_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+use_stateful_dataloader: true
+# Horizon for the cosine schedule over both 48h blocks; the Slurm walltime ends each block.
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/outputs/dvps_e4_c4_lora_r64_qwenenc
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: wandb
+run_name: dvps-experiment-4-lora-r64-qwenenc
+
+### train
+use_reentrant_gc: false
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+# For the second 48h block, set this to the last checkpoint-<step> in output_dir.
+resume_from_checkpoint: null
+
+### eval
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+# eval_loss is the mean of the per-dataset validation losses, weighted by
+# eval_interleave_probs. The best checkpoint by eval_loss is kept on top of
+# the 3 most recent ones. No early_stopping_steps: early stopping is disabled.
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false

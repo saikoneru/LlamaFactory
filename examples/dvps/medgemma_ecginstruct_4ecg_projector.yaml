@@ -31,7 +31,7 @@ freeze_multi_modal_projector: false
 dataset: ecg_instruct_ptbxl_medgemma_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_mimic_medgemma_train
 mix_strategy: interleave_over
 interleave_probs: 0.25, 0.25, 0.25, 0.25
-eval_dataset: ecg_instruct_ptbxl_medgemma_val, ecg_qa_ptbxl_paraphrased_medgemma_valid, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid, ecg_instruct_mimic_medgemma_val
+eval_dataset: ecg_instruct_ptbxl_medgemma_val_fixed, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_mimic_medgemma_val_fixed
 eval_on_each_dataset: true
 template: qwen2_omni
 cutoff_len: 2048
@@ -74,4 +74,7 @@ resume_from_checkpoint: null
 per_device_eval_batch_size: 1
 eval_strategy: steps
 eval_steps: 500
-max_eval_samples: 2048
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+early_stopping_steps: 5

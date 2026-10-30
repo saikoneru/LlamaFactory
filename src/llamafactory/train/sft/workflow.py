@@ -118,6 +118,8 @@ def run_sft(
     )
     
     trainer._stateful_data_config = build_stateful_data_config(data_args)
+    if data_args.eval_on_each_dataset and data_args.eval_interleave_probs is not None:
+        trainer._eval_loss_weights = dict(zip(data_args.eval_dataset, data_args.eval_interleave_probs))
 
     # Training
     if training_args.do_train:

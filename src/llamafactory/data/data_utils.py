@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import itertools
 import json
-from collections import defaultdict
+import os
+import pickle
+from collections import defaultdict, deque
 from enum import StrEnum, unique
 from typing import TYPE_CHECKING, Any, Callable, Iterator, Optional, TypedDict, Union
 
@@ -52,6 +55,333 @@ class DatasetModule(TypedDict):
     eval_dataset: Optional[Union["Dataset", "IterableDataset", dict[str, "Dataset"]]]
 
 
+class _MixStage:
+    r"""One iterator stage of a ``_PythonMix`` pipeline.
+
+    ``load_state_dict`` is only valid before the first ``__next__``. States are
+    built when requested, which StatefulDataLoader does on snapshot steps only.
+    """
+
+    def __iter__(self) -> "_MixStage":
+        return self
+
+    def __next__(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def state_dict(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        raise NotImplementedError
+
+
+def _dump_examples(examples: list[dict[str, Any]]) -> bytes:
+    # A single blob keeps torchdata's per-key state diff cheap for image and array payloads.
+    return pickle.dumps(examples, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+class _InterleaveStage(_MixStage):
+    def __init__(
+        self,
+        datasets: list[Any],
+        probabilities: list[float] | None,
+        seed: int,
+        stopping_strategy: str,
+    ) -> None:
+        count = len(datasets)
+        self._datasets = datasets
+        self._weights = np.array(
+            probabilities if probabilities is not None else [1.0 / count] * count, dtype=float
+        )
+        self._rng = np.random.default_rng(seed)
+        self._restart = stopping_strategy != "first_exhausted"
+        self._alive = [True] * count
+        self._iterators: list[Optional[Iterator[dict[str, Any]]]] = [None] * count
+        self._positions = [0] * count
+        self._source_states: list[Optional[dict[str, Any]]] = [None] * count
+
+    def _open(self, index: int, state: Optional[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        # Sources resume by example count. HF's own IterableDataset state is not used: through a
+        # map over Arrow tables it records the end of the current table and drops its unread rows.
+        if state is not None and "position" not in state:
+            raise ValueError("Mixed dataset state was saved by an older version and cannot be resumed exactly.")
+
+        dataset = self._datasets[index]
+        start = (state or {}).get("position", 0)
+        self._positions[index] = start
+        if start and hasattr(dataset, "__len__") and start >= len(dataset):
+            iterator = iter(())
+        elif start and hasattr(dataset, "skip_before_align"):
+            iterator = iter(dataset.skip_before_align(start))
+        elif start and hasattr(dataset, "skip"):
+            iterator = iter(dataset.skip(start))
+        else:
+            iterator = itertools.islice(iter(dataset), start, None)
+
+        self._iterators[index] = iterator
+        return iterator
+
+    def _next_from(self, index: int) -> dict[str, Any]:
+        iterator = self._iterators[index]
+        if iterator is None:
+            iterator = self._open(index, self._source_states[index])
+            self._source_states[index] = None
+
+        example = next(iterator)
+        self._positions[index] += 1
+        return example
+
+    def __next__(self) -> dict[str, Any]:
+        count = len(self._datasets)
+        while True:
+            candidates = [index for index, is_alive in enumerate(self._alive) if is_alive]
+            if not candidates:
+                raise StopIteration
+            if not self._restart and len(candidates) < count:
+                raise StopIteration
+
+            local = self._weights[candidates]
+            local = local / local.sum()
+            picked = int(candidates[int(self._rng.choice(len(candidates), p=local))])
+            try:
+                return self._next_from(picked)
+            except StopIteration:
+                if not self._restart:
+                    self._alive[picked] = False
+                    continue
+
+                self._positions[picked] = 0
+                self._open(picked, None)
+                try:
+                    return self._next_from(picked)
+                except StopIteration:
+                    self._alive[picked] = False
+
+    def _source_state(self, index: int) -> Optional[dict[str, Any]]:
+        if self._iterators[index] is None:
+            return self._source_states[index]
+
+        return {"position": self._positions[index]}
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "rng": self._rng.bit_generator.state,
+            "alive": list(self._alive),
+            "sources": [self._source_state(index) for index in range(len(self._datasets))],
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if len(state["sources"]) != len(self._datasets):
+            raise ValueError(
+                f"Mixed dataset state has {len(state['sources'])} sources, current mix has {len(self._datasets)}."
+            )
+
+        self._rng.bit_generator.state = state["rng"]
+        self._alive = list(state["alive"])
+        self._iterators = [None] * len(self._datasets)
+        self._source_states = list(state["sources"])
+
+
+class _ShuffleStage(_MixStage):
+    def __init__(self, child: _MixStage, buffer_size: int, seed: int | None) -> None:
+        self._child = child
+        self._buffer_size = buffer_size
+        self._rng = np.random.default_rng(seed)
+        self._buffer: list[dict[str, Any]] = []
+        self._draining = False
+
+    def __next__(self) -> dict[str, Any]:
+        while not self._draining:
+            try:
+                example = next(self._child)
+            except StopIteration:
+                self._draining = True
+                self._rng.shuffle(self._buffer)
+                break
+
+            self._buffer.append(example)
+            if len(self._buffer) >= self._buffer_size:
+                index = int(self._rng.integers(0, len(self._buffer)))
+                return self._buffer.pop(index)
+
+        if not self._buffer:
+            raise StopIteration
+
+        return self._buffer.pop(0)
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "rng": self._rng.bit_generator.state,
+            "draining": self._draining,
+            "buffer": _dump_examples(self._buffer),
+            "child": self._child.state_dict(),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        self._rng.bit_generator.state = state["rng"]
+        self._draining = state["draining"]
+        self._buffer = pickle.loads(state["buffer"])
+        self._child.load_state_dict(state["child"])
+
+
+class _MapStage(_MixStage):
+    def __init__(
+        self,
+        child: _MixStage,
+        function: Callable[..., dict[str, Any]],
+        batched: bool,
+        batch_size: int,
+        remove: set[str],
+    ) -> None:
+        self._child = child
+        self._function = function
+        self._batched = batched
+        self._batch_size = batch_size
+        self._remove = remove
+        self._pending: deque[dict[str, Any]] = deque()
+        self._exhausted = False
+
+    def _fill(self) -> None:
+        if not self._batched:
+            try:
+                example = next(self._child)
+            except StopIteration:
+                self._exhausted = True
+                return
+
+            mapped = self._function(example)
+            self._pending.append({key: value for key, value in mapped.items() if key not in self._remove})
+            return
+
+        batch: dict[str, list[Any]] = defaultdict(list)
+        size = 0
+        while size < self._batch_size:
+            try:
+                example = next(self._child)
+            except StopIteration:
+                self._exhausted = True
+                break
+
+            for key, value in example.items():
+                batch[key].append(value)
+            size += 1
+
+        if size:
+            self._pending.extend(_emit_batch(self._function(dict(batch)), self._remove))
+
+    def __next__(self) -> dict[str, Any]:
+        while not self._pending:
+            if self._exhausted:
+                raise StopIteration
+            self._fill()
+
+        return self._pending.popleft()
+
+    def state_dict(self) -> dict[str, Any]:
+        # Outputs of the current batch are stored because their inputs are already consumed.
+        return {
+            "pending": _dump_examples(list(self._pending)),
+            "exhausted": self._exhausted,
+            "child": self._child.state_dict(),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        self._pending = deque(pickle.loads(state["pending"]))
+        self._exhausted = state["exhausted"]
+        self._child.load_state_dict(state["child"])
+
+
+class _TakeStage(_MixStage):
+    def __init__(self, child: _MixStage, limit: int) -> None:
+        self._child = child
+        self._limit = limit
+        self._count = 0
+
+    def __next__(self) -> dict[str, Any]:
+        if self._count >= self._limit:
+            raise StopIteration
+
+        example = next(self._child)
+        self._count += 1
+        return example
+
+    def state_dict(self) -> dict[str, Any]:
+        return {"count": self._count, "child": self._child.state_dict()}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        self._count = state["count"]
+        self._child.load_state_dict(state["child"])
+
+
+class _SkipStage(_MixStage):
+    def __init__(self, child: _MixStage, skip: int) -> None:
+        self._child = child
+        self._skip = skip
+        self._count = 0
+
+    def __next__(self) -> dict[str, Any]:
+        while self._count < self._skip:
+            next(self._child)
+            self._count += 1
+
+        example = next(self._child)
+        self._count += 1
+        return example
+
+    def state_dict(self) -> dict[str, Any]:
+        return {"count": self._count, "child": self._child.state_dict()}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        self._count = state["count"]
+        self._child.load_state_dict(state["child"])
+
+
+class _MixIterator:
+    r"""One pass over a ``_PythonMix``, sharded across ranks and dataloader workers."""
+
+    def __init__(
+        self,
+        stage: _MixStage,
+        state: Optional[dict[str, Any]],
+        rank: int,
+        world_size: int,
+    ) -> None:
+        worker = torch.utils.data.get_worker_info()
+        num_workers = worker.num_workers if worker is not None else 1
+        worker_id = worker.id if worker is not None else 0
+        self.pid = os.getpid()
+        self.started = False
+        self._stage = stage
+        self._stride = world_size * num_workers
+        self._offset = rank * num_workers + worker_id
+        self._index = 0
+        if state is not None:
+            self.restore(state)
+
+    def restore(self, state: dict[str, Any]) -> None:
+        if self.started:
+            raise RuntimeError("Cannot restore a mixed dataset iterator that has already yielded examples.")
+
+        self._index = state["index"]
+        if state["stage"] is not None:
+            self._stage.load_state_dict(state["stage"])
+
+    def __iter__(self) -> "_MixIterator":
+        return self
+
+    def __next__(self) -> dict[str, Any]:
+        self.started = True
+        while True:
+            example = next(self._stage)
+            index = self._index
+            self._index += 1
+            if self._stride == 1 or index % self._stride == self._offset:
+                return example
+
+    def state_dict(self) -> dict[str, Any]:
+        return {"index": self._index, "stage": self._stage.state_dict()}
+
+
 class _PythonMix(torch.utils.data.IterableDataset):
     """Iterable mix that never asks Arrow to type mixed extra-encoder rows.
 
@@ -61,76 +391,70 @@ class _PythonMix(torch.utils.data.IterableDataset):
     mix, so we iterate Python dicts and implement the ``map`` used by the
     LLaMA-Factory loader. Subclassing torch IterableDataset stops the Trainer
     from using a length-based sampler.
+
+    ``state_dict`` and ``load_state_dict`` follow the protocol StatefulDataLoader
+    uses for Hugging Face iterables, so a mix of different extra encoders resumes
+    from the exact example where its checkpoint was taken.
     """
 
-    def __init__(self, factory: Callable[[], Iterator[dict[str, Any]]]) -> None:
+    def __init__(self, build: Callable[[], _MixStage], rank: int = 0, world_size: int = 1) -> None:
         super().__init__()
-        self._factory = factory
+        self._build = build
+        self._rank = rank
+        self._world_size = world_size
+        self._pending_state: Optional[dict[str, Any]] = None
+        self._live: Optional[_MixIterator] = None
 
-    def __iter__(self) -> Iterator[dict[str, Any]]:
-        worker = torch.utils.data.get_worker_info()
-        stream = self._factory()
-        if worker is None or worker.num_workers <= 1:
-            yield from stream
+    def __iter__(self) -> _MixIterator:
+        live = _MixIterator(self._build(), self._pending_state, self._rank, self._world_size)
+        self._pending_state = None
+        self._live = live
+        return live
+
+    def _owns_live(self) -> bool:
+        # A forked worker inherits the parent's preview iterator, which is not its position.
+        return self._live is not None and self._live.pid == os.getpid()
+
+    def state_dict(self) -> dict[str, Any]:
+        if self._owns_live():
+            return self._live.state_dict()
+
+        if self._pending_state is not None:
+            return self._pending_state
+
+        return {"index": 0, "stage": None}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if self._owns_live() and not self._live.started:
+            self._live.restore(state)
             return
-        for index, example in enumerate(stream):
-            if index % worker.num_workers == worker.id:
-                yield example
+
+        self._pending_state = state
+        self._live = None
+
+    def shard_by_node(self, rank: int, world_size: int) -> "_PythonMix":
+        r"""Return a copy that yields one rank's share of the stream."""
+        return _PythonMix(self._build, rank=rank, world_size=world_size)
+
+    def _derive(self, build: Callable[[], _MixStage]) -> "_PythonMix":
+        return _PythonMix(build, rank=self._rank, world_size=self._world_size)
 
     def shuffle(self, buffer_size: int = 16384, seed: int | None = None):
-        def shuffled_factory() -> Iterator[dict[str, Any]]:
-            rng = np.random.default_rng(seed)
-            buffer: list[dict[str, Any]] = []
-            for example in self._factory():
-                buffer.append(example)
-                if len(buffer) >= buffer_size:
-                    index = int(rng.integers(0, len(buffer)))
-                    yield buffer.pop(index)
-            rng.shuffle(buffer)
-            yield from buffer
-
-        return _PythonMix(shuffled_factory)
+        parent = self._build
+        return self._derive(lambda: _ShuffleStage(parent(), buffer_size, seed))
 
     def map(self, function, batched=True, batch_size=1000, remove_columns=None, **_kwargs):
+        parent = self._build
         remove = set(remove_columns or [])
-
-        def out_factory() -> Iterator[dict[str, Any]]:
-            if batched:
-                batch: dict[str, list[Any]] = defaultdict(list)
-                size = 0
-                for example in self._factory():
-                    for key, value in example.items():
-                        batch[key].append(value)
-                    size += 1
-                    if size >= batch_size:
-                        yield from _emit_batch(function(dict(batch)), remove)
-                        batch = defaultdict(list)
-                        size = 0
-                if size:
-                    yield from _emit_batch(function(dict(batch)), remove)
-                return
-            for example in self._factory():
-                mapped = function(example)
-                yield {key: value for key, value in mapped.items() if key not in remove}
-
-        return _PythonMix(out_factory)
+        return self._derive(lambda: _MapStage(parent(), function, batched, batch_size, remove))
 
     def take(self, n: int):
-        def taken_factory() -> Iterator[dict[str, Any]]:
-            for index, example in enumerate(self._factory()):
-                if index >= n:
-                    return
-                yield example
-
-        return _PythonMix(taken_factory)
+        parent = self._build
+        return self._derive(lambda: _TakeStage(parent(), n))
 
     def skip(self, n: int):
-        def skipped_factory() -> Iterator[dict[str, Any]]:
-            for index, example in enumerate(self._factory()):
-                if index >= n:
-                    yield example
-
-        return _PythonMix(skipped_factory)
+        parent = self._build
+        return self._derive(lambda: _SkipStage(parent(), n))
 
 
 def _emit_batch(output: dict[str, list[Any]], remove: set[str]) -> Iterator[dict[str, Any]]:
@@ -142,46 +466,13 @@ def _emit_batch(output: dict[str, list[Any]], remove: set[str]) -> Iterator[dict
         yield {key: output[key][index] for key in keys}
 
 
-def _iter_interleave(
-    datasets: list[Any],
-    probabilities: list[float] | None,
-    seed: int,
-    stopping_strategy: str,
-) -> Iterator[dict[str, Any]]:
-    count = len(datasets)
-    weights = np.array(probabilities if probabilities is not None else [1.0 / count] * count, dtype=float)
-    rng = np.random.default_rng(seed)
-    iterators = [iter(dataset) for dataset in datasets]
-    alive = [True] * count
-    restart = stopping_strategy != "first_exhausted"
-    while True:
-        candidates = [index for index, is_alive in enumerate(alive) if is_alive]
-        if not candidates:
-            return
-        if not restart and len(candidates) < count:
-            return
-        local = weights[candidates]
-        local = local / local.sum()
-        picked = int(candidates[int(rng.choice(len(candidates), p=local))])
-        try:
-            yield next(iterators[picked])
-        except StopIteration:
-            if not restart:
-                alive[picked] = False
-                continue
-            iterators[picked] = iter(datasets[picked])
-            try:
-                yield next(iterators[picked])
-            except StopIteration:
-                alive[picked] = False
-
-
 def _is_null_feature(feature: Any) -> bool:
     return isinstance(feature, Value) and feature.dtype == "null"
 
 
 def _unify_mm_features_for_mix(
     all_datasets: list[Union["Dataset", "IterableDataset"]],
+    resolve: bool = True,
 ) -> list[Union["Dataset", "IterableDataset"]]:
     r"""Make image columns mixable across path-based and bytes-based sources.
 
@@ -190,12 +481,15 @@ def _unify_mm_features_for_mix(
     `List({bytes: binary, path: null})`. `interleave_datasets` then refuses to align them.
     Recasting to `List(Image(decode=False))` keeps both representations and leaves decoding
     to LlamaFactory's collator.
+
+    With ``resolve=False`` only datasets whose features are already known are recast.
+    Inference builds a PyArrow table from a sample and cannot type decoded PIL values.
     """
     image_feature = List(Image(decode=False))
     unified = []
     for dataset in all_datasets:
         resolve_features = getattr(dataset, "_resolve_features", None)
-        if callable(resolve_features):
+        if resolve and callable(resolve_features):
             dataset = resolve_features()
 
         features = getattr(dataset, "features", None)
@@ -233,7 +527,8 @@ def merge_dataset(
     if len(all_datasets) == 1:
         return all_datasets[0]
 
-    all_datasets = _unify_mm_features_for_mix(all_datasets)
+    use_python_mix = data_args.mix_strategy.startswith("interleave") and requires_python_mix(encoder_schemas)
+    all_datasets = _unify_mm_features_for_mix(all_datasets, resolve=not use_python_mix)
 
     if data_args.mix_strategy == "concat":
         if data_args.streaming:
@@ -251,7 +546,7 @@ def merge_dataset(
             "interleave_once": "all_exhausted_without_replacement",
         }[data_args.mix_strategy]
         probabilities = data_args.eval_interleave_probs if is_eval else data_args.interleave_probs
-        if not requires_python_mix(encoder_schemas):
+        if not use_python_mix:
             return interleave_datasets(
                 datasets=all_datasets,
                 probabilities=probabilities,
@@ -261,17 +556,9 @@ def merge_dataset(
 
         logger.info_rank0(
             "Interleaving datasets in Python so mixed extra-encoder rows "
-            "are not forced through PyArrow feature inference. "
-            "`use_stateful_dataloader` cannot resume this mix."
+            "are not forced through PyArrow feature inference."
         )
-        return _PythonMix(
-            lambda: _iter_interleave(
-                all_datasets,
-                probabilities,
-                seed,
-                strategy_map,
-            )
-        )
+        return _PythonMix(lambda: _InterleaveStage(all_datasets, probabilities, seed, strategy_map))
 
     raise ValueError(f"Unknown mixing strategy: {data_args.mix_strategy}.")
 

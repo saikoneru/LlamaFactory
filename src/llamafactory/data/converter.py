@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 import json
 import os
 from abc import abstractmethod
@@ -562,9 +563,26 @@ def align_dataset(
         )
 
     dataset_converter = get_dataset_converter(dataset_attr.formatting, dataset_attr, data_args)
-    return dataset.map(
+    aligned = dataset.map(
         dataset_converter,
         batched=False,
         remove_columns=column_names,
         **kwargs,
     )
+    if data_args.streaming and hasattr(dataset, "skip"):
+        # The converter maps rows one to one, so skipping raw rows lands on the same example
+        # without decoding and re-encoding the media of every skipped row.
+        aligned.skip_before_align = functools.partial(
+            _skip_then_align, dataset, dataset_converter, column_names
+        )
+
+    return aligned
+
+
+def _skip_then_align(
+    dataset: "IterableDataset",
+    dataset_converter: "DatasetConverter",
+    column_names: list[str],
+    count: int,
+) -> "IterableDataset":
+    return dataset.skip(count).map(dataset_converter, batched=False, remove_columns=column_names)

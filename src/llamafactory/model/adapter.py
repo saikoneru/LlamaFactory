@@ -247,6 +247,8 @@ def _setup_lora_tuning(
 
     if is_trainable and adapter_to_resume is None:  # create new lora weights while training
         model_type = getattr(model.config, "model_type", None)
+        # Appended after patch_target_modules, which would otherwise drop them via freeze_vision_tower.
+        qwen_encoder_targets = []
 
         if model_type in {"qwen2_5_omni_terramind", "qwen2_5_omni_composite"}:
             allowed_suffixes = {
@@ -277,6 +279,24 @@ def _setup_lora_tuning(
                 "text-decoder LoRA targets; extra-encoder projectors stay full-FT."
             )
 
+            if finetuning_args.qwen_encoder_lora:
+                qwen_encoder_targets = [
+                    name
+                    for name, module in model.named_modules()
+                    if isinstance(module, torch.nn.Linear)
+                    and (
+                        "qwen.thinker.visual.blocks." in name
+                        or "qwen.thinker.audio_tower.layers." in name
+                    )
+                ]
+                if not qwen_encoder_targets:
+                    raise RuntimeError("No Qwen Thinker vision/audio encoder LoRA targets found.")
+
+                logger.info_rank0(
+                    f"{model_type}: adding {len(qwen_encoder_targets)} Qwen Thinker "
+                    "vision-block and audio-layer LoRA targets."
+                )
+
         elif (
             len(finetuning_args.lora_target) == 1
             and finetuning_args.lora_target[0] == "all"
@@ -293,6 +313,7 @@ def _setup_lora_tuning(
             target_modules = find_expanded_modules(model, target_modules, finetuning_args.freeze_trainable_layers)
 
         target_modules = patch_target_modules(model, finetuning_args, target_modules)
+        target_modules = list(target_modules) + qwen_encoder_targets
 
         if (
             finetuning_args.use_dora
