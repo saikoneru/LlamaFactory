@@ -111,6 +111,8 @@ class _InterleaveStage(_MixStage):
         self._positions[index] = start
         if start and hasattr(dataset, "__len__") and start >= len(dataset):
             iterator = iter(())
+        elif start and hasattr(dataset, "skip_before_align"):
+            iterator = iter(dataset.skip_before_align(start))
         elif start and hasattr(dataset, "skip"):
             iterator = iter(dataset.skip(start))
         else:

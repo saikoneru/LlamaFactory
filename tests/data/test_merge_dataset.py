@@ -2,11 +2,13 @@
 
 import io
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 import torch
 from datasets import Dataset, IterableDataset
 
+from llamafactory.data.converter import align_dataset
 from llamafactory.data.data_utils import _PythonMix, merge_dataset, requires_python_mix
 
 
@@ -229,6 +231,56 @@ def test_python_mix_resumes_through_stateful_dataloader(num_workers, cut):
     resumed = make_loader()
     resumed.load_state_dict(state)
     assert before + list(resumed) == expected
+
+
+def _aligned_mix(converted):
+    pil = pytest.importorskip("PIL.Image")
+
+    def convert(example):
+        converted.append(example["id"])
+        return {"row_id": example["id"]}
+
+    def source(name, count):
+        rows = [{"id": f"{name}-{index}", "image": pil.new("RGB", (4, 4), (index, 0, 0))} for index in range(count)]
+        dataset = Dataset.from_list(rows).to_iterable_dataset()
+        with patch("llamafactory.data.converter.get_dataset_converter", return_value=convert):
+            return align_dataset(dataset, SimpleNamespace(formatting="sharegpt"), SimpleNamespace(streaming=True), None)
+
+    data_args = SimpleNamespace(
+        mix_strategy="interleave_over",
+        interleave_probs=[0.6, 0.4],
+        eval_interleave_probs=None,
+        streaming=True,
+    )
+    merged = merge_dataset(
+        [source("medgemma", 9), source("terramind", 6)],
+        data_args,
+        seed=3,
+        encoder_schemas=[frozenset({"medgemma"}), frozenset({"terramind"})],
+    )
+    assert isinstance(merged, _PythonMix)
+    return merged.take(30)
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+@pytest.mark.parametrize("cut", [1, 5, 11, 20])
+def test_python_mix_resume_skips_raw_rows_without_converting(cut):
+    converted = []
+    expected = [row["row_id"] for row in _aligned_mix(converted)]
+    assert len(expected) == 30
+
+    converted.clear()
+    pipeline = _aligned_mix(converted)
+    iterator = iter(pipeline)
+    before = [next(iterator)["row_id"] for _ in range(cut)]
+    state = _roundtrip(pipeline.state_dict())
+
+    converted.clear()
+    resumed = _aligned_mix(converted)
+    resumed.load_state_dict(state)
+    after = [row["row_id"] for row in resumed]
+    assert before + after == expected
+    assert converted == after, "rows skipped on resume must not reach the converter"
 
 
 @pytest.mark.runs_on(["cpu", "mps", "cuda"])
