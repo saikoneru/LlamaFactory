@@ -21,6 +21,7 @@ from huggingface_hub import hf_hub_download
 
 from ..extras.constants import DATA_CONFIG
 from ..extras.misc import use_modelscope, use_openmind
+from .box_format import BOX_FORMATS
 from .extra_encoders import encoder_columns_from_config
 
 
@@ -46,6 +47,10 @@ class DatasetAttr:
     audios: str | None = None
     terramind: str | None = None
     encoder_columns: dict[str, str] | None = None
+    # bounding boxes, see box_format.py
+    box_format: str | None = None
+    default_box_angle: int = 0
+    canonical_box_angle: bool = False
     # dpo columns
     chosen: str | None = None
     rejected: str | None = None
@@ -79,6 +84,14 @@ class DatasetAttr:
         self.set_attr("split", attr, default="train")
         self.set_attr("folder", attr)
         self.set_attr("num_samples", attr)
+        self.set_attr("box_format", attr)
+        self.set_attr("default_box_angle", attr, default=0)
+        self.set_attr("canonical_box_angle", attr, default=False)
+        if self.box_format is not None:
+            if self.box_format not in BOX_FORMATS:
+                raise ValueError(f"Unknown box_format {self.box_format!r}; expected one of {BOX_FORMATS}.")
+            if self.formatting != "sharegpt" or self.ranking:
+                raise ValueError("`box_format` is only supported for non-ranking sharegpt datasets.")
 
         if "columns" in attr:
             column_names = ["prompt", "query", "response", "history", "messages", "system", "tools"]
