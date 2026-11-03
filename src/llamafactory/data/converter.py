@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Union
 
 from ..extras import logging
+from .box_format import normalize_boxes
 from .data_utils import Role
 
 import io
@@ -305,10 +306,24 @@ class SharegptDatasetConverter(DatasetConverter):
                 broken_data = True
                 break
 
+            content = message[self.dataset_attr.content_tag]
+            if self.dataset_attr.box_format:
+                normalized = normalize_boxes(
+                    content,
+                    self.dataset_attr.box_format,
+                    self.dataset_attr.default_box_angle,
+                    self.dataset_attr.canonical_box_angle,
+                )
+                if not normalized.valid:
+                    logger.warning_rank0(f"Invalid bounding box in {content!r}.")
+                    broken_data = True
+                    break
+                content = normalized.text
+
             aligned_messages.append(
                 {
                     "role": tag_mapping[message[self.dataset_attr.role_tag]],
-                    "content": message[self.dataset_attr.content_tag],
+                    "content": content,
                 }
             )
 

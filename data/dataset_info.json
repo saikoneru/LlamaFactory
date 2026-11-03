@@ -3001,5 +3001,73 @@
       "assistant_tag": "assistant",
       "content_tag": "content"
     }
+  },
+  "mmtrain_geochat_qwen_train_boxnorm": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/GeoChat_Instruct/train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    },
+    "box_format": "geochat",
+    "default_box_angle": 0
+  },
+  "mmtrain_geochat_qwen_val_boxnorm": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/GeoChat_Instruct/val",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "images": "images"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    },
+    "box_format": "geochat",
+    "default_box_angle": 0
+  },
+  "benx_s1s2_train_boxnorm": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    },
+    "box_format": "unit_list",
+    "default_box_angle": 0
+  },
+  "benx_s1s2_val_boxnorm": {
+    "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/val.parquet",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "terramind": "terramind"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    },
+    "box_format": "unit_list",
+    "default_box_angle": 0
   }
 }
