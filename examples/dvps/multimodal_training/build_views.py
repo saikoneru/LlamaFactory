@@ -319,10 +319,14 @@ def validate_manifest(
     for dataset_name, dataset in datasets.items():
         if not isinstance(dataset, dict):
             raise ConfigurationError(f"Dataset {dataset_name!r} must be an object.")
-        if dataset.get("mode") not in {"rewrite", "symlink", "existing"}:
+        if dataset.get("mode") not in {"rewrite", "symlink", "existing", "remap"}:
             raise ConfigurationError(
-                f"Dataset {dataset_name!r} mode must be 'rewrite', 'symlink' or "
-                "'existing'."
+                f"Dataset {dataset_name!r} mode must be 'rewrite', 'symlink', "
+                "'existing' or 'remap'."
+            )
+        if dataset.get("mode") == "remap" and not dataset.get("path_columns"):
+            raise ConfigurationError(
+                f"Dataset {dataset_name!r} uses mode 'remap' but lists no path_columns."
             )
         if not isinstance(dataset.get("splits"), dict) or not dataset["splits"]:
             raise ConfigurationError(f"Dataset {dataset_name!r} has no splits.")
@@ -379,7 +383,8 @@ def build_route_bindings(
                 multi_payload=bool(item.get("multi_payload", False)),
             )
         )
-    if not bindings and not dataset.get("text_only"):
+    # remap only rewrites media paths: no encoder routes, markers left as they are.
+    if not bindings and not dataset.get("text_only") and dataset.get("mode") != "remap":
         raise ConfigurationError(f"Dataset {dataset_name!r} has no encoder routes.")
     if bindings and dataset.get("text_only"):
         raise ConfigurationError(
@@ -1025,7 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.dry_run:
             rows = sum(pq.ParquetFile(path).metadata.num_rows for path in files)
-        elif dataset["mode"] == "rewrite":
+        elif dataset["mode"] in ("rewrite", "remap"):
             # One source file and a .parquet output stays a file; shards keep
             # their names under an output directory.
             single = len(files) == 1 and output_path.suffix == ".parquet"

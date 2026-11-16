@@ -546,3 +546,54 @@ def test_existing_mode_registers_in_place_and_refuses_other_paths(tmp_path):
     elsewhere.write_bytes(before)
     with pytest.raises(views.ConfigurationError, match="must be its own output"):
         views.main(["--config", str(manifest(elsewhere)), "--registry-template", str(template)])
+
+
+def test_remap_mode_translates_paths_without_touching_markers(tmp_path):
+    media = tmp_path / "leo" / "ecg.png"
+    media.parent.mkdir()
+    media.write_bytes(b"png")
+    source_dir = tmp_path / "helios"
+    source_dir.mkdir()
+    pq.write_table(
+        pa.table(
+            {
+                # two markers, one path: a route check would reject this row
+                "messages": [messages("<image><image>Compare.")],
+                "images": [["/helios/ecg.png"]],
+                "question_type": ["single-verify"],
+            }
+        ),
+        source_dir / "test.parquet",
+    )
+    manifest = tmp_path / "bench.json"
+    output_root = tmp_path / "bench_data"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "output_root": str(output_root),
+                "path_map": [["/helios/", f"{tmp_path}/leo/"]],
+                "routes": {"qwen_vision": {"native": True, "marker": "<image>", "column": "images"}},
+                "datasets": {
+                    "ECG-QA-test": {
+                        "mode": "remap",
+                        "path_columns": ["images", "audios"],
+                        "splits": {"test": {"source": str(source_dir / "test.parquet"), "output": "ECG-QA/test.parquet"}},
+                    }
+                },
+            }
+        )
+    )
+
+    assert views.main(["--config", str(manifest), "--check-paths"]) == 0
+    row = pq.read_table(output_root / "ECG-QA" / "test.parquet").to_pylist()[0]
+    assert row["images"] == [str(media)]
+    assert row["messages"][0]["content"] == "<image><image>Compare."
+    assert row["question_type"] == "single-verify"
+
+
+def test_remap_mode_requires_path_columns():
+    manifest = {"version": 1, "routes": {"x": {"native": True, "marker": "<image>", "column": "images"}},
+                "datasets": {"d": {"mode": "remap", "splits": {"s": {"source": "a", "output": "b"}}}}}
+    with pytest.raises(views.ConfigurationError, match="lists no path_columns"):
+        views.validate_manifest(manifest)

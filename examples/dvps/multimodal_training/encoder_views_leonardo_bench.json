@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "_comment": "DVPSBench eval data for Leonardo. output_root mirrors the Helios datasets/ layout, so DVPSBENCH_DATASETS=<output_root> works with the benchmark YAMLs unchanged. Sources are Helios paths translated by path_map; remap copies a split with its media paths translated.",
+  "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr/config.json",
+  "output_root": "/leonardo_scratch/fast/trans_f3/dvps-multimodal/bench_data",
+  "relative_symlinks": true,
+  "path_map": [
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/data/video-lipreading/video-pipeline/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/lipcrops_180hours/media/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/models/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/models/"
+    ]
+  ],
+  "routes": {
+    "autoavsr_audio": {
+      "encoder": "autoavsr_audio",
+      "marker": "<autoavsr_audio>",
+      "column": "autoavsr_audio"
+    },
+    "autoavsr_video": {
+      "encoder": "autoavsr_video",
+      "marker": "<autoavsr_video>",
+      "column": "autoavsr_video"
+    }
+  },
+  "datasets": {
+    "Aya": {
+      "mode": "symlink",
+      "text_only": true,
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Aya/sharegpt/test.parquet",
+          "output": "Aya/sharegpt"
+        }
+      }
+    },
+    "BigEarthNet.txt-s1s2": {
+      "mode": "symlink",
+      "text_only": true,
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/bench.parquet",
+          "output": "BigEarthNet.txt/benx_llamafactory_s1s2"
+        }
+      }
+    },
+    "MnM2": {
+      "mode": "symlink",
+      "text_only": true,
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/MnM2/sharegpt/test.parquet",
+          "output": "MnM2/sharegpt"
+        }
+      }
+    },
+    "MnM2-medgemma": {
+      "mode": "symlink",
+      "text_only": true,
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/MnM2/test.parquet",
+          "output": "multimodal_training/MnM2"
+        }
+      }
+    },
+    "MIMIC-CXR": {
+      "mode": "symlink",
+      "text_only": true,
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/MIMIC-CXR-old/test.parquet",
+          "output": "MIMIC-CXR"
+        }
+      }
+    },
+    "BigEarthNet.txt:sharegpt-rgb:bench": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/sharegpt-rgb/bench.parquet",
+          "output": "BigEarthNet.txt/sharegpt-rgb/bench.parquet"
+        }
+      }
+    },
+    "ECG-Instruct:mimic_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-Instruct/mimic_test.parquet",
+          "output": "ECG-Instruct/mimic_test.parquet"
+        }
+      }
+    },
+    "ECG-Instruct:ptbxl_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-Instruct/ptbxl_test.parquet",
+          "output": "ECG-Instruct/ptbxl_test.parquet"
+        }
+      }
+    },
+    "ECG-QA:mimic_iv_ecg_paraphrased_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/mimic_iv_ecg_paraphrased_test.parquet",
+          "output": "ECG-QA/mimic_iv_ecg_paraphrased_test.parquet"
+        }
+      }
+    },
+    "ECG-QA:ptbxl_paraphrased_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ptbxl_paraphrased_test.parquet",
+          "output": "ECG-QA/ptbxl_paraphrased_test.parquet"
+        }
+      }
+    },
+    "LNQA:sharegpt:test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/test.parquet",
+          "output": "LNQA/sharegpt/test.parquet"
+        }
+      }
+    },
+    "RSVQA-HR:rsvqa-hr_sharegpt:test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSVQA-HR/rsvqa-hr_sharegpt/test.parquet",
+          "output": "RSVQA-HR/rsvqa-hr_sharegpt/test.parquet"
+        }
+      }
+    },
+    "Speech2Latex:converted_all:equations_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/equations_test.parquet",
+          "output": "Speech2Latex/converted_all/equations_test.parquet"
+        }
+      }
+    },
+    "Speech2Latex:converted_all:sentences_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/sentences_test.parquet",
+          "output": "Speech2Latex/converted_all/sentences_test.parquet"
+        }
+      }
+    },
+    "VRSBench:sharegpt:bench:caption": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/VRSBench/sharegpt/bench/caption",
+          "output": "VRSBench/sharegpt/bench/caption"
+        }
+      }
+    },
+    "VRSBench:sharegpt:bench:referring": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/VRSBench/sharegpt/bench/referring",
+          "output": "VRSBench/sharegpt/bench/referring"
+        }
+      }
+    },
+    "VRSBench:sharegpt:bench:vqa": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/VRSBench/sharegpt/bench/vqa",
+          "output": "VRSBench/sharegpt/bench/vqa"
+        }
+      }
+    },
+    "lipcrops_180hours:video:eval": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/eval.parquet",
+          "output": "lipcrops_180hours/video/eval.parquet"
+        }
+      }
+    },
+    "lipcrops_180hours:video:audio_eval": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/audio_eval.parquet",
+          "output": "lipcrops_180hours/video/audio_eval.parquet"
+        }
+      }
+    },
+    "lipcrops_180hours:video:av_eval": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/video/av_eval.parquet",
+          "output": "lipcrops_180hours/video/av_eval.parquet"
+        }
+      }
+    },
+    "multimodal_training_v2:ECG-Instruct:mimic_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/mimic_test.parquet",
+          "output": "multimodal_training_v2/ECG-Instruct/mimic_test.parquet"
+        }
+      }
+    },
+    "multimodal_training_v2:ECG-Instruct:ptbxl_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/ptbxl_test.parquet",
+          "output": "multimodal_training_v2/ECG-Instruct/ptbxl_test.parquet"
+        }
+      }
+    },
+    "multimodal_training_v2:ECG-QA:mimic_iv_ecg_paraphrased_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/mimic_iv_ecg_paraphrased_test.parquet",
+          "output": "multimodal_training_v2/ECG-QA/mimic_iv_ecg_paraphrased_test.parquet"
+        }
+      }
+    },
+    "multimodal_training_v2:ECG-QA:ptbxl_paraphrased_test": {
+      "mode": "remap",
+      "path_columns": [
+        "images",
+        "audios",
+        "videos",
+        "medgemma",
+        "lipread"
+      ],
+      "splits": {
+        "test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/ptbxl_paraphrased_test.parquet",
+          "output": "multimodal_training_v2/ECG-QA/ptbxl_paraphrased_test.parquet"
+        }
+      }
+    },
+    "multimodal_training:lipcrops_180hours_autoavsr_av": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_audio",
+          "source_column": "audios",
+          "fallback_markers": [
+            "<audio>"
+          ]
+        },
+        {
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "splits": {
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+          "output": "multimodal_training/lipcrops_180hours_autoavsr_av/eval.parquet"
+        }
+      }
+    },
+    "multimodal_training:lipcrops_180hours_autoavsr_video": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "remove_markers": [
+        "<audio>"
+      ],
+      "drop_columns": [
+        "audios"
+      ],
+      "splits": {
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+          "output": "multimodal_training/lipcrops_180hours_autoavsr_video/eval.parquet"
+        }
+      }
+    },
+    "multimodal_training:lipcrops_180hours_autoavsr_audio": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_audio",
+          "source_column": "audios",
+          "fallback_markers": [
+            "<audio>"
+          ]
+        }
+      ],
+      "remove_markers": [
+        "<lipread>"
+      ],
+      "drop_columns": [
+        "lipread"
+      ],
+      "splits": {
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_eval.parquet",
+          "output": "multimodal_training/lipcrops_180hours_autoavsr_audio/eval.parquet"
+        }
+      }
+    }
+  }
+}

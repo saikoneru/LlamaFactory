@@ -90,6 +90,8 @@ media paths stored in the routed columns, so the views open files that exist the
 - Rows with several payloads of one route (two-ECG comparisons) need
   `"multi_payload": true` on that route binding; text-only datasets need
   `"text_only": true` and no routes.
+- `"mode": "remap"` copies a file with only its media paths translated (the columns
+  listed in `path_columns`); markers and columns are not touched. Used for evaluation splits.
 - `"mode": "existing"` validates and registers a view that is already correct in
   place (its `source` must be its own `output`); nothing is written.
 
