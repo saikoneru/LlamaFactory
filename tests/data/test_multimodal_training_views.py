@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -317,3 +318,173 @@ def test_native_rgb_is_validated_then_symlinked(tmp_path):
     assert rows == 1
     assert link.is_symlink()
     assert link.resolve() == source.resolve()
+
+
+def test_path_mapper_uses_longest_prefix():
+    mapper = views.PathMapper(
+        [("/old/datasets/", "/new/datasets/"), ("/old/datasets/mt/", "/new/mt/")]
+    )
+
+    assert mapper.path("/old/datasets/mt/a.parquet") == "/new/mt/a.parquet"
+    assert mapper.path("/old/datasets/x/b.png") == "/new/datasets/x/b.png"
+    assert mapper.path("/elsewhere/c.png") == "/elsewhere/c.png"
+    assert mapper.value([{"bytes": None, "path": "/old/datasets/x/d.png"}]) == [
+        {"bytes": None, "path": "/new/datasets/x/d.png"}
+    ]
+
+
+def test_rewrite_remaps_media_paths_and_checks_them(tmp_path):
+    media = tmp_path / "new" / "img.png"
+    media.parent.mkdir()
+    media.write_bytes(b"png")
+    source = tmp_path / "source.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "messages": [messages("<image>Describe."), messages("<image>Again.")],
+                "images": [
+                    [{"bytes": None, "path": "/helios/img.png"}],
+                    [{"bytes": None, "path": "/helios/gone.png"}],
+                ],
+            }
+        ),
+        source,
+    )
+    qwen = binding("qwen_vision", "images", "images", "<image>")
+    mapper = views.PathMapper([("/helios/", f"{tmp_path}/new/")])
+    check = views.PathCheck({})
+    output = tmp_path / "out.parquet"
+
+    views.rewrite_parquet(
+        source,
+        output,
+        [qwen],
+        [],
+        [],
+        overwrite=False,
+        validate_only=False,
+        path_mapper=mapper,
+        path_columns=["images"],
+        path_check=check,
+    )
+    rows = pq.read_table(output).to_pylist()
+
+    assert rows[0]["images"][0]["path"] == str(media)
+    assert rows[1]["images"][0]["path"] == f"{tmp_path}/new/gone.png"
+    assert check.missing == 1
+    assert check.examples == [f"{tmp_path}/new/gone.png"]
+
+
+def test_embedded_bytes_need_no_file():
+    check = views.PathCheck({})
+    check.add([[{"bytes": b"x", "path": "/nowhere/a.png"}]])
+
+    assert check.missing == 0
+
+
+def test_multi_payload_route_needs_one_marker_per_payload():
+    ecg = binding("medgemma", "medgemma", "medgemma", "<medgemma>")
+    ecg = views.RouteBinding(**{**ecg.__dict__, "multi_payload": True})
+
+    rewritten = views.rewrite_row_messages(
+        messages("<medgemma><medgemma>Compare the two ECGs."),
+        [ecg],
+        {"medgemma": True},
+        {"medgemma": 2},
+        [],
+        "test:row 0",
+    )
+    assert rewritten[0]["content"].count("<medgemma>") == 2
+
+    with pytest.raises(views.RowValidationError, match="exactly 2"):
+        views.rewrite_row_messages(
+            messages("<medgemma>Only one marker."),
+            [ecg],
+            {"medgemma": True},
+            {"medgemma": 2},
+            [],
+            "test:row 1",
+        )
+
+
+def test_symlink_split_can_use_relative_links(tmp_path):
+    source_dir = tmp_path / "datasets" / "Aya" / "train"
+    source_dir.mkdir(parents=True)
+    source = source_dir / "train-00000.parquet"
+    pq.write_table(pa.table({"messages": [messages("Translate this.")]}), source)
+    output_dir = tmp_path / "views" / "Aya" / "train"
+
+    rows = views.process_symlink_split(
+        [source], output_dir, [], [], overwrite=False, validate_only=False, relative=True
+    )
+    link = output_dir / source.name
+
+    assert rows == 1
+    assert not Path(os.readlink(link)).is_absolute()
+    assert link.resolve() == source.resolve()
+
+
+def test_text_only_dataset_needs_explicit_flag():
+    with pytest.raises(views.ConfigurationError, match="no encoder routes"):
+        views.build_route_bindings("Aya", {"routes": []}, {})
+    assert views.build_route_bindings("Aya", {"routes": [], "text_only": True}, {}) == []
+
+
+def test_main_maps_sources_and_writes_relative_registry(tmp_path):
+    helios = tmp_path / "helios" / "datasets" / "GeoChat" / "train"
+    helios.mkdir(parents=True)
+    (tmp_path / "helios" / "datasets" / "GeoChat" / "img.png").write_bytes(b"png")
+    for index in range(2):
+        pq.write_table(
+            pa.table(
+                {
+                    "messages": [messages("<image>Describe.")],
+                    "images": [["/net/datasets/GeoChat/img.png"]],
+                }
+            ),
+            helios / f"train-0000{index}.parquet",
+        )
+    template = tmp_path / "dataset_info.json"
+    template.write_text(
+        json.dumps({"geochat_train": {"file_name": "/net/x", "columns": {"images": "images"}}})
+    )
+    manifest = tmp_path / "views.json"
+    output_root = tmp_path / "views"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "output_root": str(output_root),
+                "path_map": [["/net/", f"{tmp_path}/helios/"]],
+                "routes": {
+                    "qwen_vision": {"native": True, "marker": "<image>", "column": "images"}
+                },
+                "datasets": {
+                    "GeoChat": {
+                        "mode": "rewrite",
+                        "routes": [{"route": "qwen_vision"}],
+                        "splits": {
+                            "train": {
+                                "source": "/net/datasets/GeoChat/train",
+                                "output": "GeoChat/train",
+                                "dataset_info": "geochat_train",
+                            }
+                        },
+                    }
+                },
+            }
+        )
+    )
+
+    code = views.main(
+        ["--config", str(manifest), "--registry-template", str(template), "--check-paths"]
+    )
+    registry = json.loads((output_root / "dataset_info.json").read_text())
+    shard = pq.read_table(output_root / "GeoChat" / "train" / "train-00001.parquet")
+
+    assert code == 0
+    assert registry["geochat_train"]["file_name"] == "GeoChat/train"
+    assert registry["geochat_train"]["columns"] == {"images": "images"}
+    assert shard.column("images").to_pylist() == [
+        [f"{tmp_path}/helios/datasets/GeoChat/img.png"]
+    ]

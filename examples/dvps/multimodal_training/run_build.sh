@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-ROOT=/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm
+# DVPS_ROOT holds LLaMA-Factory/; override it on another cluster (e.g. Leonardo).
+ROOT="${DVPS_ROOT:-/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm}"
 SCRIPT_DIR="${ROOT}/LLaMA-Factory/examples/dvps/multimodal_training"
 
 if [[ -z "${SLURM_JOB_ID:-}" ]]; then
