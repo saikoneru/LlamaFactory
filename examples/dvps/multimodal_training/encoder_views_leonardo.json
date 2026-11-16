@@ -369,20 +369,28 @@
       "mode": "rewrite",
       "routes": [
         {
-          "route": "autoavsr_audio"
+          "route": "autoavsr_audio",
+          "source_column": "audios",
+          "fallback_markers": [
+            "<audio>"
+          ]
         },
         {
-          "route": "autoavsr_video"
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
         }
       ],
       "splits": {
         "train": {
-          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_av/train.parquet",
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
           "output": "lipcrops_180hours_autoavsr_av/train.parquet",
           "dataset_info": "mmtrain_lipcrops_autoavsr_av_train"
         },
         "val": {
-          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_av/val.parquet",
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
           "output": "lipcrops_180hours_autoavsr_av/val.parquet",
           "dataset_info": "mmtrain_lipcrops_autoavsr_av_val"
         }
@@ -392,17 +400,27 @@
       "mode": "rewrite",
       "routes": [
         {
-          "route": "autoavsr_video"
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
         }
+      ],
+      "remove_markers": [
+        "<audio>"
+      ],
+      "drop_columns": [
+        "audios"
       ],
       "splits": {
         "train": {
-          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_video/train.parquet",
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
           "output": "lipcrops_180hours_autoavsr_video/train.parquet",
           "dataset_info": "mmtrain_lipcrops_autoavsr_video_train"
         },
         "val": {
-          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/lipcrops_180hours_autoavsr_video/val.parquet",
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
           "output": "lipcrops_180hours_autoavsr_video/val.parquet",
           "dataset_info": "mmtrain_lipcrops_autoavsr_video_val"
         }
