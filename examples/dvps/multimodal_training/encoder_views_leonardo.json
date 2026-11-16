@@ -1,10 +1,9 @@
 {
   "version": 1,
-  "_comment": "Leonardo build of the views used by examples/dvps/dvps_v1..v4. Sources are written as Helios paths and translated by path_map; outputs and dataset_info.json go to output_root.",
+  "_comment": "Leonardo build of the views used by examples/dvps/leonardo/dvps_v1..v4, into the common folder dvps-multimodal/. Sources are written as Helios paths and translated by path_map.",
   "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr/config.json",
-  "output_root": "/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/multimodal_training",
+  "output_root": "/leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training",
   "registry_template": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data/dataset_info.json",
-  "relative_symlinks": true,
   "path_map": [
     [
       "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/",
@@ -19,12 +18,12 @@
       "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/lipcrops_180hours/media/"
     ],
     [
-      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/",
-      "/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/"
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/"
     ],
     [
-      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/",
-      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/"
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/models/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/models/"
     ]
   ],
   "routes": {
@@ -287,7 +286,7 @@
       }
     },
     "ACDC": {
-      "mode": "symlink",
+      "mode": "existing",
       "routes": [
         {
           "route": "medgemma"
@@ -296,18 +295,18 @@
       "splits": {
         "train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ACDC/train.parquet",
-          "output": "ACDC/train",
+          "output": "ACDC/train.parquet",
           "dataset_info": "acdc_medgemma_train"
         },
         "val": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ACDC/val.parquet",
-          "output": "ACDC/val",
+          "output": "ACDC/val.parquet",
           "dataset_info": "acdc_medgemma_val"
         }
       }
     },
     "MnM2": {
-      "mode": "symlink",
+      "mode": "existing",
       "routes": [
         {
           "route": "medgemma"
@@ -316,18 +315,18 @@
       "splits": {
         "train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/MnM2/train.parquet",
-          "output": "MnM2/train",
+          "output": "MnM2/train.parquet",
           "dataset_info": "mnm2_medgemma_train"
         },
         "val": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/MnM2/val.parquet",
-          "output": "MnM2/val",
+          "output": "MnM2/val.parquet",
           "dataset_info": "mnm2_medgemma_val"
         }
       }
     },
     "emidec": {
-      "mode": "symlink",
+      "mode": "existing",
       "routes": [
         {
           "route": "medgemma"
@@ -336,12 +335,12 @@
       "splits": {
         "train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/emidec/train.parquet",
-          "output": "emidec/train",
+          "output": "emidec/train.parquet",
           "dataset_info": "emidec_medgemma_train"
         },
         "val": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/emidec/val.parquet",
-          "output": "emidec/val",
+          "output": "emidec/val.parquet",
           "dataset_info": "emidec_medgemma_val"
         }
       }
@@ -409,5 +408,6 @@
         }
       }
     }
-  }
+  },
+  "relative_symlinks": true
 }

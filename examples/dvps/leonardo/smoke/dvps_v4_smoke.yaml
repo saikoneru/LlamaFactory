@@ -4,7 +4,7 @@
 ### output_dir, resume_from_checkpoint (fresh start: Helios checkpoints are not on Leonardo) and
 ### the wandb_run_id comment (a fresh run must not append to the Helios W&B run).
 # Submit with:
-#   sbatch --job-name=dvps_v4 /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
+#   sbatch --job-name=dvps_v4 /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
 ### [v4 stage 1] Projector-only SFT from the composite base checkpoint.
 ### Thinker, every encoder, Qwen's native projectors, and the TerraMind
 ### fusion gate stay frozen. Trainable: projectors.terramind,
@@ -29,11 +29,14 @@
 ###     0.075 ecg_instruct_mimic_medgemma_train
 ###   Auto-AVSR (0.25)
 ###     0.25  mmtrain_lipcrops_autoavsr_video_train             <autoavsr_video> only
+### 8 GPUs (2 Booster nodes x 4 A100 64 GB): per_device_train_batch_size 8 -> 4 because bs 8 ran out of
+### memory on a 64 GB A100 (smoke test 2026-11-16). gradient_accumulation_steps stays 4, so the global
+### batch stays 4 x 4 x 8 = 128, as on Helios (8 x 4 x 4 GH200).
 
 
 
 ### model
-model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -68,7 +71,7 @@ eval_interleave_probs: 0.30, 0.05, 0.05, 0.05, 0.075, 0.075, 0.075, 0.075, 0.25
 eval_on_each_dataset: true
 template: qwen2_omni
 cutoff_len: 4096
-dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/multimodal_training
+dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training
 overwrite_cache: true
 packing: false
 streaming: true
@@ -83,7 +86,7 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/smoke_dvps_v4  # SMOKE (was: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/dvps_v4-stage1)
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/outputs/smoke_dvps_v4  # SMOKE (was: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/outputs/dvps_v4-stage1)
 logging_steps: 1  # SMOKE (was: 10)
 save_strategy: steps
 save_steps: 20  # SMOKE (was: 500)
@@ -96,7 +99,7 @@ run_name: smoke-dvps-v4  # SMOKE (was: dvps-v4-stage1-proj-only)
 
 ### train
 use_reentrant_gc: false
-per_device_train_batch_size: 8
+per_device_train_batch_size: 4  # Leonardo: 8 GPUs x 4 (was 8 on 4 GH200)
 gradient_accumulation_steps: 4
 learning_rate: 2.0e-5
 lr_scheduler_type: cosine

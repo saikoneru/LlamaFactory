@@ -90,13 +90,16 @@ media paths stored in the routed columns, so the views open files that exist the
 - Rows with several payloads of one route (two-ECG comparisons) need
   `"multi_payload": true` on that route binding; text-only datasets need
   `"text_only": true` and no routes.
+- `"mode": "existing"` validates and registers a view that is already correct in
+  place (its `source` must be its own `output`); nothing is written.
 
 ```bash
-OWN=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici
+ROOT=/leonardo_scratch/fast/trans_f3/dvps-multimodal
+M=$ROOT/dvps-fm/LLaMA-Factory/examples/dvps/multimodal_training
 sbatch -A trans_f3 -p lrd_all_serial -t 04:00:00 -c 4 --mem=30G \
-  -o $OWN/logs/%x-%j.out -e $OWN/logs/%x-%j.err \
-  --export=ALL,DVPS_ROOT=$OWN,BUILD_MODULES=python/3.11.7,VENV_PATH=$OWN/envs/views \
-  $OWN/LLaMA-Factory/examples/dvps/multimodal_training/submit_build.sbatch \
-  --config $OWN/LLaMA-Factory/examples/dvps/multimodal_training/encoder_views_leonardo.json \
-  --check-paths
+  -o $ROOT/dvps-fm/logs/%x-%j.out -e $ROOT/dvps-fm/logs/%x-%j.err \
+  --export=ALL,DVPS_ROOT=$ROOT/dvps-fm,BUILD_MODULES=python/3.11.7,VENV_PATH=$ROOT/envs/dvps_train \
+  $M/submit_build.sbatch --config $M/encoder_views_leonardo.json --check-paths
 ```
+Leonardo's serial QoS allows 4 h per job: build BigEarthNet.txt_s1s2 (1.1 TB scanned)
+in its own job with `--dataset BigEarthNet.txt_s1s2`.

@@ -4,13 +4,13 @@
 #SBATCH --job-name=phase4_train
 #SBATCH --partition=boost_usr_prod
 #SBATCH --account=trans_f3
-#SBATCH --nodes=1
+#SBATCH --nodes=2   # 8 A100 (2 x 4); see per_device_train_batch_size in the configs
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=480G
 #SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
-#SBATCH --output=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/logs/%x-%j.log
+#SBATCH --output=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/logs/%x-%j.log
 #SBATCH --export=NONE
 #
 # Usage:
@@ -43,13 +43,13 @@ echo "W&B project:    ${WANDB_PROJECT}"
 # x86_64 / A100 env pinned to the Helios package versions (torch 2.13.0+cu126); CUDA comes from the wheels.
 module load python/3.11.7
 unset PYTHONPATH  # the module's PYTHONPATH would shadow the venv
-source /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/envs/dvps_train/bin/activate
+source /leonardo_scratch/fast/trans_f3/dvps-multimodal/envs/dvps_train/bin/activate
 
 # rcorrente's LLaMA-Factory checkout on Leonardo (same commit as Helios), used read-only.
 export PYTHONPATH=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/src
 export DISABLE_VERSION_CHECK=1
 export TOKENIZERS_PARALLELISM=false
-export HF_HOME=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/.cache/huggingface
+export HF_HOME=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache/huggingface
 # Booster compute nodes have no internet; the checkpoint is self-contained.
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -57,7 +57,7 @@ export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_MODULES_CACHE="${HF_HOME}/job_modules/${SLURM_JOB_ID}"
 export HF_DATASETS_CACHE="${HF_HOME}/job_datasets/${SLURM_JOB_ID}"
 # A fixed Inductor cache lets restarted jobs reuse kernels compiled by earlier runs.
-export TORCHINDUCTOR_CACHE_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/.cache/torchinductor
+export TORCHINDUCTOR_CACHE_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache/torchinductor
 export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
 export TORCHDYNAMO_CAPTURE_DYNAMIC_OUTPUT_SHAPE_OPS=1
 export TORCH_LOGS="graph_breaks,recompiles"
@@ -65,7 +65,7 @@ export WANDB_ENTITY=DVPS-ai
 export WANDB_PROJECT
 # No internet on compute nodes: log offline, then `wandb sync` from a login node.
 export WANDB_MODE=offline
-export WANDB_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/wandb
+export WANDB_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/wandb
 mkdir -p "${WANDB_DIR}"
 if [[ -f "${HOME}/.wandb_api_key" ]]; then
   export WANDB_API_KEY="$(cat "${HOME}/.wandb_api_key")"
@@ -78,7 +78,7 @@ if [[ -n "${WANDB_RUN_ID}" ]]; then
   echo "W&B resume: ${WANDB_ENTITY}/${WANDB_PROJECT}/${WANDB_RUN_ID}"
 fi
 
-mkdir -p /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/logs /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs
+mkdir -p /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/logs /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/outputs
 mkdir -p "${HF_HOME}" "${HF_MODULES_CACHE}" "${HF_DATASETS_CACHE}" "${TORCHINDUCTOR_CACHE_DIR}"
 
 # Refuse configs that still point to Helios (HELIOS_GUARD).
@@ -87,7 +87,7 @@ if grep -vE '^[[:space:]]*#' "${YAML}" | grep -q '/net/storage'; then
   exit 2
 fi
 
-cd /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici
+cd /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm
 
 # Populate custom Transformers modules once before torchrun starts. Loading an
 # empty shared module cache concurrently from every rank can expose partially

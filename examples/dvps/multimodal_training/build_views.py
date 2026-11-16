@@ -319,9 +319,10 @@ def validate_manifest(
     for dataset_name, dataset in datasets.items():
         if not isinstance(dataset, dict):
             raise ConfigurationError(f"Dataset {dataset_name!r} must be an object.")
-        if dataset.get("mode") not in {"rewrite", "symlink"}:
+        if dataset.get("mode") not in {"rewrite", "symlink", "existing"}:
             raise ConfigurationError(
-                f"Dataset {dataset_name!r} mode must be 'rewrite' or 'symlink'."
+                f"Dataset {dataset_name!r} mode must be 'rewrite', 'symlink' or "
+                "'existing'."
             )
         if not isinstance(dataset.get("splits"), dict) or not dataset["splits"]:
             raise ConfigurationError(f"Dataset {dataset_name!r} has no splits.")
@@ -1039,6 +1040,24 @@ def main(argv: list[str] | None = None) -> int:
                     overwrite=args.overwrite,
                     validate_only=args.validate_only,
                     path_mapper=path_mapper,
+                    path_columns=path_columns,
+                    path_check=path_check,
+                )
+        elif dataset["mode"] == "existing":
+            # The view is already correct in place (e.g. embedded images under
+            # output_root): validate and register it, write nothing.
+            source = Path(path_mapper.path(str(split["source"])))
+            if os.path.abspath(source) != os.path.abspath(output_path):
+                raise ConfigurationError(
+                    f"Existing split {dataset_name}:{split_name} must be its own "
+                    f"output: source {source} != output {output_path}."
+                )
+            rows = 0
+            for source_path in files:
+                rows += scan_parquet(
+                    source_path,
+                    bindings,
+                    dataset.get("remove_markers", []),
                     path_columns=path_columns,
                     path_check=path_check,
                 )

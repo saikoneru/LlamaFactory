@@ -488,3 +488,61 @@ def test_main_maps_sources_and_writes_relative_registry(tmp_path):
     assert shard.column("images").to_pylist() == [
         [f"{tmp_path}/helios/datasets/GeoChat/img.png"]
     ]
+
+
+def test_existing_mode_registers_in_place_and_refuses_other_paths(tmp_path):
+    output_root = tmp_path / "views"
+    (output_root / "ACDC").mkdir(parents=True)
+    view = output_root / "ACDC" / "train.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "messages": [messages("<medgemma>Segment the heart.")],
+                "medgemma": [[{"bytes": b"png", "path": "slice.png"}]],
+            }
+        ),
+        view,
+    )
+    template = tmp_path / "dataset_info.json"
+    template.write_text(json.dumps({"acdc_train": {"file_name": "/net/x", "columns": {"medgemma": "medgemma"}}}))
+
+    def manifest(source):
+        path = tmp_path / "views.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "output_root": str(output_root),
+                    "routes": {"medgemma": {"native": True, "marker": "<medgemma>", "column": "medgemma"}},
+                    "datasets": {
+                        "ACDC": {
+                            "mode": "existing",
+                            "routes": [{"route": "medgemma"}],
+                            "splits": {
+                                "train": {
+                                    "source": str(source),
+                                    "output": "ACDC/train.parquet",
+                                    "dataset_info": "acdc_train",
+                                }
+                            },
+                        }
+                    },
+                }
+            )
+        )
+        return path
+
+    before = view.read_bytes()
+    code = views.main(
+        ["--config", str(manifest(view)), "--registry-template", str(template), "--check-paths"]
+    )
+    registry = json.loads((output_root / "dataset_info.json").read_text())
+
+    assert code == 0
+    assert view.read_bytes() == before
+    assert registry["acdc_train"]["file_name"] == "ACDC/train.parquet"
+
+    elsewhere = tmp_path / "other.parquet"
+    elsewhere.write_bytes(before)
+    with pytest.raises(views.ConfigurationError, match="must be its own output"):
+        views.main(["--config", str(manifest(elsewhere)), "--registry-template", str(template)])
