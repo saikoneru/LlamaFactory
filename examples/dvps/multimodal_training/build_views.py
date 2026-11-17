@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 import os
+import re
 import shutil
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -332,6 +335,26 @@ def validate_manifest(
             )
         if not isinstance(dataset.get("splits"), dict) or not dataset["splits"]:
             raise ConfigurationError(f"Dataset {dataset_name!r} has no splits.")
+        pairs = dataset.get("payload_pairs")
+        if pairs is not None:
+            if dataset["mode"] not in ("rewrite", "remap"):
+                raise ConfigurationError(
+                    f"Dataset {dataset_name!r} sets payload_pairs, which needs mode "
+                    "'rewrite' or 'remap'."
+                )
+            if not isinstance(pairs, dict) or not pairs.get("column") or not pairs.get("marker"):
+                raise ConfigurationError(
+                    f"Dataset {dataset_name!r} payload_pairs needs a column and a marker."
+                )
+            for rule in pairs.get("rules", []):
+                if rule.get("labels") and len(rule["labels"]) != 2:
+                    raise ConfigurationError(
+                        f"Dataset {dataset_name!r} payload_pairs labels must name both payloads."
+                    )
+                if rule.get("chronological") and not pairs.get("times"):
+                    raise ConfigurationError(
+                        f"Dataset {dataset_name!r} payload_pairs is chronological but lists no times."
+                    )
         for split_name, split in dataset["splits"].items():
             seed = split.get("shuffle_seed") if isinstance(split, dict) else None
             if seed is None:
@@ -686,6 +709,114 @@ def process_row_group(
     return rewritten
 
 
+class PayloadPairs:
+    """Order and label the two payloads of comparison rows (``"payload_pairs"`` option).
+
+    Applies to rows whose ``column`` holds exactly two payloads and whose user turn holds
+    two ``marker``s. The first rule whose ``match`` (regex on the user turn; no ``match``
+    matches every row) applies gives:
+
+    - ``labels``: text put before each marker, the marker then followed by a newline,
+      e.g. ``Previous ECG: <medgemma>\nRecent ECG: <medgemma>\nQuestion``;
+    - ``chronological``: the payloads are swapped when the first one is later, using the
+      ``times`` tables; with ``drop_ties`` a pair recorded at the same time is dropped.
+
+    ``times`` lists CSV tables: ``path_regex`` extracts a key from a payload path (group 1),
+    looked up in ``key_column`` (``key_int`` compares integers) to read ``time_column``.
+    Times compare as strings, so they must sort (ISO dates do).
+    """
+
+    def __init__(self, options: dict[str, Any], path_mapper: PathMapper | None) -> None:
+        self.column = str(options["column"])
+        self.marker = str(options["marker"])
+        self.rules = [
+            {
+                "match": re.compile(rule["match"]) if rule.get("match") else None,
+                "labels": list(rule.get("labels") or []),
+                "chronological": bool(rule.get("chronological", False)),
+                "name": str(rule.get("name") or rule.get("match") or "default"),
+            }
+            for rule in options.get("rules", [])
+        ]
+        self.drop_ties = bool(options.get("drop_ties", False))
+        self.tables = []
+        for table in options.get("times", []):
+            path = (path_mapper or PathMapper()).path(str(table["csv"]))
+            as_int = bool(table.get("key_int", False))
+            times: dict[Any, str] = {}
+            with open(path, newline="") as handle:
+                for row in csv.DictReader(handle):
+                    key = row[table["key_column"]]
+                    times[int(float(key)) if as_int else key] = row[table["time_column"]]
+            self.tables.append((re.compile(table["path_regex"]), as_int, times))
+        self.stats: Counter = Counter()
+
+    def _time(self, payload: Any) -> str | None:
+        path = payload.get("path") if isinstance(payload, dict) else payload
+        if not isinstance(path, str):
+            return None
+        for pattern, as_int, times in self.tables:
+            match = pattern.search(path)
+            if match:
+                key = int(match.group(1)) if as_int else match.group(1)
+                return times.get(key)
+        return None
+
+    def _label(self, content: str, labels: list[str]) -> str:
+        parts = content.split(self.marker)
+        out = parts[0]
+        for label, part in zip(labels, parts[1:]):
+            out += f"{label}{self.marker}\n" + part.lstrip("\n")
+        return out
+
+    def apply(self, table: pa.Table) -> pa.Table:
+        messages = table.column(MESSAGES_COLUMN).to_pylist()
+        payloads = table.column(self.column).to_pylist()
+        keep: list[int] = []
+        for index, (row_messages, row_payloads) in enumerate(zip(messages, payloads)):
+            keep.append(index)
+            users = [m for m in row_messages if isinstance(m, dict) and m.get("role") == "user"]
+            if not isinstance(row_payloads, list) or len(row_payloads) != 2 or not users:
+                continue
+            user = users[0]
+            if user["content"].count(self.marker) != 2:
+                self.stats["pair_marker_mismatch"] += 1
+                continue
+            rule = next(
+                (r for r in self.rules if r["match"] is None or r["match"].search(user["content"])),
+                None,
+            )
+            if rule is None:
+                self.stats["pairs_without_rule"] += 1
+                continue
+            self.stats[f"pairs[{rule['name']}]"] += 1
+            if rule["chronological"]:
+                first, second = (self._time(payload) for payload in row_payloads)
+                if first is None or second is None:
+                    self.stats["chronological_time_missing"] += 1
+                elif first > second:
+                    row_payloads.reverse()
+                    self.stats["chronological_swapped"] += 1
+                elif first == second:
+                    self.stats["chronological_ties"] += 1
+                    if self.drop_ties:
+                        keep.pop()
+                        continue
+            if rule["labels"]:
+                user["content"] = self._label(user["content"], rule["labels"])
+        arrays = []
+        for field in table.schema:
+            if field.name == MESSAGES_COLUMN:
+                values = [messages[i] for i in keep]
+            elif field.name == self.column:
+                values = [payloads[i] for i in keep]
+            else:
+                arrays.append(table.column(field.name).take(pa.array(keep, type=pa.int64())))
+                continue
+            arrays.append(pa.array(values, type=field.type))
+        return pa.Table.from_arrays(arrays, schema=table.schema)
+
+
 def scan_parquet(
     source_path: Path,
     bindings: list[RouteBinding],
@@ -696,9 +827,11 @@ def scan_parquet(
     path_mapper: PathMapper | None = None,
     path_columns: Iterable[str] = (),
     path_check: PathCheck | None = None,
+    payload_pairs: PayloadPairs | None = None,
 ) -> int:
     source = pq.ParquetFile(source_path)
     row_offset = 0
+    rows_out = 0
     renames = {
         binding.source_column: binding.target_column for binding in bindings
     }
@@ -713,6 +846,9 @@ def scan_parquet(
 
     for group_index in range(source.num_row_groups):
         table = source.read_row_group(group_index)
+        source_rows = table.num_rows
+        if payload_pairs is not None:
+            table = payload_pairs.apply(table)
         rewritten = process_row_group(
             table,
             bindings,
@@ -743,8 +879,9 @@ def scan_parquet(
                     else:
                         arrays.append(table.column(source_name).combine_chunks())
             writer.write_table(pa.Table.from_arrays(arrays, schema=output_schema))
-        row_offset += table.num_rows
-    return row_offset
+        row_offset += source_rows
+        rows_out += table.num_rows
+    return rows_out
 
 
 def rewrite_parquet(
@@ -759,6 +896,7 @@ def rewrite_parquet(
     path_mapper: PathMapper | None = None,
     path_columns: Iterable[str] = (),
     path_check: PathCheck | None = None,
+    payload_pairs: PayloadPairs | None = None,
 ) -> int:
     source = pq.ParquetFile(source_path)
     output_schema = build_output_schema(
@@ -768,6 +906,7 @@ def rewrite_parquet(
         "path_mapper": path_mapper,
         "path_columns": path_columns,
         "path_check": path_check,
+        "payload_pairs": payload_pairs,
     }
     if validate_only:
         return scan_parquet(
@@ -1077,6 +1216,11 @@ def main(argv: list[str] | None = None) -> int:
             *dataset.get("path_columns", []),
         ]
         path_check = PathCheck(path_cache) if args.check_paths else None
+        payload_pairs = (
+            PayloadPairs(dataset["payload_pairs"], path_mapper)
+            if dataset.get("payload_pairs") and dataset["mode"] in ("rewrite", "remap")
+            else None
+        )
         print(
             f"{dataset_name}:{split_name} mode={dataset['mode']} "
             f"files={len(files)} output={output_path}"
@@ -1116,6 +1260,7 @@ def main(argv: list[str] | None = None) -> int:
                             path_mapper=path_mapper,
                             path_columns=path_columns,
                             path_check=path_check,
+                            payload_pairs=payload_pairs,
                         )
                     shuffle_split_outputs(staged, targets, int(shuffle_seed), staging)
                 finally:
@@ -1139,6 +1284,7 @@ def main(argv: list[str] | None = None) -> int:
                         path_mapper=path_mapper,
                         path_columns=path_columns,
                         path_check=path_check,
+                        payload_pairs=payload_pairs,
                     )
         elif dataset["mode"] == "existing":
             # The view is already correct in place (e.g. embedded images under
@@ -1178,6 +1324,9 @@ def main(argv: list[str] | None = None) -> int:
         }
         if split.get("shuffle_seed") is not None:
             split_report["shuffle_seed"] = int(split["shuffle_seed"])
+        if payload_pairs is not None:
+            split_report["payload_pairs"] = dict(sorted(payload_pairs.stats.items()))
+            print(f"{dataset_name}:{split_name} payload_pairs {dict(payload_pairs.stats)}")
         if path_check is not None:
             split_report["checked_paths"] = len(path_check.checked)
             split_report["missing_paths"] = path_check.missing

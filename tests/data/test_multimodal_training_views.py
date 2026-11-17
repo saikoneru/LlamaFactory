@@ -699,3 +699,112 @@ def test_shuffle_seed_needs_a_written_view(tmp_path):
     manifest.write_text(json.dumps(data))
     with pytest.raises(views.ConfigurationError, match="integer"):
         views.main(["--config", str(manifest)])
+
+
+def _pairs_options(tmp_path):
+    times = tmp_path / "record_list.csv"
+    times.write_text("path,ecg_time\nfiles/p1/s1/1,2180-01-02 08:00:00\nfiles/p1/s2/2,2181-05-06 09:00:00\nfiles/p1/s3/3,2181-05-06 09:00:00\n")
+    return {
+        "column": "medgemma",
+        "marker": "<medgemma>",
+        "drop_ties": True,
+        "times": [{"csv": str(times), "path_regex": r"(files/p\d+/s\d+/\d+)\.png", "key_column": "path", "time_column": "ecg_time"}],
+        "rules": [
+            {"name": "consecutive", "match": "(?i)previous|recent", "labels": ["Previous ECG: ", "Recent ECG: "], "chronological": True},
+            {"name": "irrelevant", "labels": ["First ECG: ", "Second ECG: "]},
+        ],
+    }
+
+
+def _ecg_table(rows):
+    return pa.table(
+        {
+            "messages": [[{"role": "user", "content": q}, {"role": "assistant", "content": "yes"}] for q, _ in rows],
+            "medgemma": [list(p) for _, p in rows],
+        }
+    )
+
+
+def test_payload_pairs_order_label_and_drop_ties(tmp_path):
+    pairs = views.PayloadPairs(_pairs_options(tmp_path), None)
+    out = pairs.apply(
+        _ecg_table(
+            [
+                ("<medgemma><medgemma>Is it gone in the recent tracing vs the previous one?", ["/x/files/p1/s2/2.png", "/x/files/p1/s1/1.png"]),
+                ("<medgemma><medgemma>Is it in the recent tracing?", ["/x/files/p1/s2/2.png", "/x/files/p1/s3/3.png"]),
+                ("<medgemma><medgemma>Is it in the second ECG?", ["/x/files/p1/s2/2.png", "/x/files/p1/s1/1.png"]),
+                ("<medgemma>Is there an AV block?", ["/x/files/p1/s1/1.png"]),
+            ]
+        )
+    ).to_pylist()
+
+    assert len(out) == 3  # the tie (same recording time) is dropped
+    assert out[0]["medgemma"] == ["/x/files/p1/s1/1.png", "/x/files/p1/s2/2.png"]  # swapped to chronological
+    assert out[0]["messages"][0]["content"] == (
+        "Previous ECG: <medgemma>\nRecent ECG: <medgemma>\nIs it gone in the recent tracing vs the previous one?"
+    )
+    # An unrelated pair keeps its order and gets the first / second labels.
+    assert out[1]["medgemma"] == ["/x/files/p1/s2/2.png", "/x/files/p1/s1/1.png"]
+    assert out[1]["messages"][0]["content"].startswith("First ECG: <medgemma>\nSecond ECG: <medgemma>\n")
+    assert out[2]["messages"][0]["content"] == "<medgemma>Is there an AV block?"  # single payload untouched
+    assert pairs.stats == {"pairs[consecutive]": 2, "chronological_swapped": 1, "chronological_ties": 1, "pairs[irrelevant]": 1}
+
+
+def test_payload_pairs_in_a_remap_build(tmp_path):
+    source = tmp_path / "test.parquet"
+    pq.write_table(
+        _ecg_table([("<medgemma><medgemma>Compared to the previous one?", ["/x/files/p1/s2/2.png", "/x/files/p1/s1/1.png"])]),
+        source,
+    )
+    manifest = tmp_path / "views.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "output_root": str(tmp_path / "out"),
+                "routes": {},
+                "datasets": {
+                    "ECG-QA": {
+                        "mode": "remap",
+                        "path_columns": ["medgemma"],
+                        "payload_pairs": _pairs_options(tmp_path),
+                        "splits": {"test": {"source": str(source), "output": "ECG-QA/test.parquet"}},
+                    }
+                },
+            }
+        )
+    )
+    assert views.main(["--config", str(manifest)]) == 0
+    row = pq.read_table(tmp_path / "out" / "ECG-QA" / "test.parquet").to_pylist()[0]
+    assert row["medgemma"] == ["/x/files/p1/s1/1.png", "/x/files/p1/s2/2.png"]
+    assert row["messages"][0]["content"].startswith("Previous ECG: <medgemma>\nRecent ECG: <medgemma>\n")
+    report = json.loads((tmp_path / "out" / "last_build_report.json").read_text())
+    assert report["splits"]["ECG-QA:test"]["payload_pairs"]["chronological_swapped"] == 1
+
+
+def test_payload_pairs_need_a_written_view_and_two_labels(tmp_path):
+    for mode, rules, message in (
+        ("symlink", [], "payload_pairs"),
+        ("remap", [{"labels": ["Only one: "]}], "both payloads"),
+    ):
+        manifest = tmp_path / f"{mode}.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "output_root": str(tmp_path / "out"),
+                    "routes": {},
+                    "datasets": {
+                        "ECG-QA": {
+                            "mode": mode,
+                            "path_columns": ["medgemma"],
+                            "text_only": True,
+                            "payload_pairs": {"column": "medgemma", "marker": "<medgemma>", "rules": rules},
+                            "splits": {"test": {"source": str(tmp_path), "output": "x"}},
+                        }
+                    },
+                }
+            )
+        )
+        with pytest.raises(views.ConfigurationError, match=message):
+            views.main(["--config", str(manifest)])
