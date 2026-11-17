@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_comment": "ECG-QA with labelled, chronological ECG pairs (payload_pairs), for the boundary-token ablation. Training views as in encoder_views_leonardo.json; eval files as in the bench manifest. Builds into the smestici workspace, not the shared views.",
+  "_comment": "ECG-QA with labelled, chronological ECG pairs (payload_pairs), for the boundary-token ablation. Training views as in encoder_views_leonardo.json; eval files as in the bench manifest. Builds into the smestici workspace, not the shared views. The consecutive rule matches whole words: 'previously' also appears in First/Second questions (\\bprevious\\b|\\brecent\\b is exact against question_type on every split). Eval files keep tie rows, since DVPSBench reads their tasks from a row-aligned label file.",
   "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr/config.json",
   "registry_template": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data/dataset_info.json",
   "path_map": [
@@ -121,7 +121,7 @@
         "rules": [
           {
             "name": "consecutive",
-            "match": "(?i)previous|recent",
+            "match": "(?i)\\bprevious\\b|\\brecent\\b",
             "labels": [
               "Previous ECG: ",
               "Recent ECG: "
@@ -146,7 +146,7 @@
       "payload_pairs": {
         "column": "medgemma",
         "marker": "<medgemma>",
-        "drop_ties": true,
+        "drop_ties": false,
         "times": [
           {
             "csv": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ecg-qa/waveforms/ptb-xl/ptbxl_database.csv",
@@ -165,7 +165,7 @@
         "rules": [
           {
             "name": "consecutive",
-            "match": "(?i)previous|recent",
+            "match": "(?i)\\bprevious\\b|\\brecent\\b",
             "labels": [
               "Previous ECG: ",
               "Recent ECG: "
