@@ -19,11 +19,13 @@ import argparse
 import copy
 import json
 import os
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
@@ -330,6 +332,19 @@ def validate_manifest(
             )
         if not isinstance(dataset.get("splits"), dict) or not dataset["splits"]:
             raise ConfigurationError(f"Dataset {dataset_name!r} has no splits.")
+        for split_name, split in dataset["splits"].items():
+            seed = split.get("shuffle_seed") if isinstance(split, dict) else None
+            if seed is None:
+                continue
+            if dataset["mode"] not in ("rewrite", "remap"):
+                raise ConfigurationError(
+                    f"{dataset_name}:{split_name} sets shuffle_seed, which needs mode "
+                    "'rewrite' or 'remap' (the view must be written, not linked)."
+                )
+            if isinstance(seed, bool) or not isinstance(seed, int):
+                raise ConfigurationError(
+                    f"{dataset_name}:{split_name} shuffle_seed must be an integer."
+                )
         build_route_bindings(dataset_name, dataset, route_configs)
 
     return route_configs
@@ -805,6 +820,44 @@ def rewrite_parquet(
     return rows
 
 
+def shuffle_split_outputs(
+    staged: list[Path], outputs: list[Path], seed: int, staging: Path
+) -> None:
+    """Write staged shards to outputs with one seeded permutation over all their rows.
+
+    The training loader reads each source in file order, so a view written in its
+    source's order (e.g. ECG-QA grouped by question type) gives every step rows of one
+    task. Output shard i keeps staged shard i's name and row count; rows are memory-mapped
+    from one Arrow IPC file, so the split never has to fit in memory twice.
+    """
+    combined = staging / "_rows.arrow"
+    schema = pq.ParquetFile(staged[0]).schema_arrow
+    counts: list[int] = []
+    with pa.OSFile(str(combined), "wb") as sink, pa.ipc.new_file(sink, schema) as writer:
+        for path in staged:
+            shard = pq.ParquetFile(path)
+            if not shard.schema_arrow.equals(schema, check_metadata=False):
+                raise ConfigurationError(f"{path} has a different schema from {staged[0]}.")
+            counts.append(shard.metadata.num_rows)
+            for group_index in range(shard.num_row_groups):
+                writer.write_table(shard.read_row_group(group_index))
+    with pa.memory_map(str(combined), "r") as source:
+        rows = pa.ipc.open_file(source).read_all()
+        order = np.random.default_rng(seed).permutation(rows.num_rows)
+        start = 0
+        for path, output, count in zip(staged, outputs, counts):
+            part = rows.take(pa.array(order[start : start + count]))
+            start += count
+            output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = output.with_name(f".{output.name}.tmp-{os.getpid()}")
+            pq.write_table(
+                part.replace_schema_metadata(schema.metadata),
+                temporary,
+                compression=_compression(pq.ParquetFile(path)),
+            )
+            os.replace(temporary, output)
+
+
 def source_parquet_files(
     split: dict[str, Any], path_mapper: PathMapper | None = None
 ) -> list[Path]:
@@ -1034,20 +1087,59 @@ def main(argv: list[str] | None = None) -> int:
             # One source file and a .parquet output stays a file; shards keep
             # their names under an output directory.
             single = len(files) == 1 and output_path.suffix == ".parquet"
-            rows = 0
-            for source_path in files:
-                rows += rewrite_parquet(
-                    source_path,
-                    output_path if single else output_path / source_path.name,
-                    bindings,
-                    dataset.get("remove_markers", []),
-                    dataset.get("drop_columns", []),
-                    overwrite=args.overwrite,
-                    validate_only=args.validate_only,
-                    path_mapper=path_mapper,
-                    path_columns=path_columns,
-                    path_check=path_check,
-                )
+            targets = [
+                output_path if single else output_path / source_path.name
+                for source_path in files
+            ]
+            shuffle_seed = split.get("shuffle_seed")
+            existing = [target for target in targets if target.exists()]
+            if (
+                shuffle_seed is not None
+                and not args.validate_only
+                and (args.overwrite or not existing)
+            ):
+                # Rows are permuted across all shards, so the split is built as a whole.
+                staging = output_path.parent / f".{output_path.name}.shuffle-{os.getpid()}"
+                shutil.rmtree(staging, ignore_errors=True)
+                staged = [staging / source_path.name for source_path in files]
+                try:
+                    rows = 0
+                    for source_path, staged_path in zip(files, staged):
+                        rows += rewrite_parquet(
+                            source_path,
+                            staged_path,
+                            bindings,
+                            dataset.get("remove_markers", []),
+                            dataset.get("drop_columns", []),
+                            overwrite=True,
+                            validate_only=False,
+                            path_mapper=path_mapper,
+                            path_columns=path_columns,
+                            path_check=path_check,
+                        )
+                    shuffle_split_outputs(staged, targets, int(shuffle_seed), staging)
+                finally:
+                    shutil.rmtree(staging, ignore_errors=True)
+            else:
+                if shuffle_seed is not None and existing and len(existing) < len(targets):
+                    raise ConfigurationError(
+                        f"{dataset_name}:{split_name} is shuffled across shards but only "
+                        f"{len(existing)} of {len(targets)} exist; rebuild with --overwrite."
+                    )
+                rows = 0
+                for source_path, target in zip(files, targets):
+                    rows += rewrite_parquet(
+                        source_path,
+                        target,
+                        bindings,
+                        dataset.get("remove_markers", []),
+                        dataset.get("drop_columns", []),
+                        overwrite=args.overwrite,
+                        validate_only=args.validate_only,
+                        path_mapper=path_mapper,
+                        path_columns=path_columns,
+                        path_check=path_check,
+                    )
         elif dataset["mode"] == "existing":
             # The view is already correct in place (e.g. embedded images under
             # output_root): validate and register it, write nothing.
@@ -1084,6 +1176,8 @@ def main(argv: list[str] | None = None) -> int:
             "mode": dataset["mode"],
             "output": str(output_path),
         }
+        if split.get("shuffle_seed") is not None:
+            split_report["shuffle_seed"] = int(split["shuffle_seed"])
         if path_check is not None:
             split_report["checked_paths"] = len(path_check.checked)
             split_report["missing_paths"] = path_check.missing

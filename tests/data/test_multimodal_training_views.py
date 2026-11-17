@@ -597,3 +597,105 @@ def test_remap_mode_requires_path_columns():
                 "datasets": {"d": {"mode": "remap", "splits": {"s": {"source": "a", "output": "b"}}}}}
     with pytest.raises(views.ConfigurationError, match="lists no path_columns"):
         views.validate_manifest(manifest)
+
+
+def _shuffle_manifest(tmp_path, seed=7, mode="rewrite"):
+    source = tmp_path / "datasets" / "ECG-QA" / "train"
+    source.mkdir(parents=True, exist_ok=True)
+    # Two shards written in task order, as the ECG-QA conversion does.
+    for shard, task in enumerate(("single", "comparison")):
+        pq.write_table(
+            pa.table(
+                {
+                    "messages": [messages(f"<image>{task} question {shard * 50 + i}") for i in range(50)],
+                    "images": [[f"{tmp_path}/img.png"]] * 50,
+                }
+            ),
+            source / f"part-0000{shard}.parquet",
+        )
+    (tmp_path / "img.png").write_bytes(b"png")
+    manifest = tmp_path / "views.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "output_root": str(tmp_path / "views"),
+                "routes": {"qwen_vision": {"native": True, "marker": "<image>", "column": "images"}},
+                "datasets": {
+                    "ECG-QA": {
+                        "mode": mode,
+                        **({"path_columns": ["images"]} if mode == "remap" else {}),
+                        "routes": [{"route": "qwen_vision"}] if mode != "remap" else [],
+                        "splits": {
+                            "train": {"source": str(source), "output": "ECG-QA/train", "shuffle_seed": seed}
+                        },
+                    }
+                },
+            }
+        )
+    )
+    return manifest, tmp_path / "views" / "ECG-QA" / "train"
+
+
+def _questions(output):
+    return [
+        row[0]["content"]
+        for path in sorted(output.glob("*.parquet"))
+        for row in pq.read_table(path).column("messages").to_pylist()
+    ]
+
+
+def test_shuffle_seed_permutes_rows_across_shards(tmp_path):
+    manifest, output = _shuffle_manifest(tmp_path)
+    assert views.main(["--config", str(manifest)]) == 0
+
+    shards = sorted(output.glob("*.parquet"))
+    assert [path.name for path in shards] == ["part-00000.parquet", "part-00001.parquet"]
+    assert [pq.ParquetFile(path).metadata.num_rows for path in shards] == [50, 50]
+    questions = _questions(output)
+    assert sorted(questions) == sorted(f"<image>{t} question {i}" for t, r in (("single", range(50)), ("comparison", range(50, 100))) for i in r)
+    first = [q.split()[0] for q in questions[:50]]
+    assert "<image>single" in first and "<image>comparison" in first  # both tasks in each shard
+    report = json.loads((tmp_path / "views" / "last_build_report.json").read_text())
+    assert report["splits"]["ECG-QA:train"]["shuffle_seed"] == 7
+    assert not list(output.parent.glob(".train.shuffle-*"))
+
+
+def test_shuffle_seed_is_reproducible_and_seed_dependent(tmp_path):
+    manifest, output = _shuffle_manifest(tmp_path / "a", seed=7)
+    views.main(["--config", str(manifest)])
+    again, output_again = _shuffle_manifest(tmp_path / "b", seed=7)
+    views.main(["--config", str(again)])
+    other, output_other = _shuffle_manifest(tmp_path / "c", seed=8)
+    views.main(["--config", str(other)])
+
+    strip = lambda qs: [q.split(" ", 1)[1] for q in qs]  # noqa: E731
+    assert strip(_questions(output)) == strip(_questions(output_again))
+    assert strip(_questions(output)) != strip(_questions(output_other))
+
+
+def test_shuffled_split_is_skipped_when_built_and_rebuilt_with_overwrite(tmp_path):
+    manifest, output = _shuffle_manifest(tmp_path)
+    views.main(["--config", str(manifest)])
+    before = _questions(output)
+    views.main(["--config", str(manifest)])
+    assert _questions(output) == before
+    (output / "part-00001.parquet").unlink()
+    with pytest.raises(views.ConfigurationError, match="--overwrite"):
+        views.main(["--config", str(manifest)])
+    assert views.main(["--config", str(manifest), "--overwrite"]) == 0
+    assert _questions(output) == before
+
+
+def test_shuffle_seed_needs_a_written_view(tmp_path):
+    manifest, _ = _shuffle_manifest(tmp_path)
+    data = json.loads(manifest.read_text())
+    data["datasets"]["ECG-QA"]["mode"] = "symlink"
+    manifest.write_text(json.dumps(data))
+    with pytest.raises(views.ConfigurationError, match="shuffle_seed"):
+        views.main(["--config", str(manifest)])
+    data["datasets"]["ECG-QA"]["mode"] = "rewrite"
+    data["datasets"]["ECG-QA"]["splits"]["train"]["shuffle_seed"] = "7"
+    manifest.write_text(json.dumps(data))
+    with pytest.raises(views.ConfigurationError, match="integer"):
+        views.main(["--config", str(manifest)])

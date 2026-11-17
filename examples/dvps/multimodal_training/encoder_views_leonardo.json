@@ -157,7 +157,8 @@
         "equations_train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/equations_train.parquet",
           "output": "Speech2Latex/equations_train.parquet",
-          "dataset_info": "speech2latex_equations_train"
+          "dataset_info": "speech2latex_equations_train",
+          "shuffle_seed": 42
         },
         "equations_test": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/equations_test.parquet",
@@ -177,7 +178,8 @@
         "sentences_train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex_no_tedx/train.parquet",
           "output": "Speech2Latex_no_tedx/train.parquet",
-          "dataset_info": "speech2latex_sentences_train_no_tedx"
+          "dataset_info": "speech2latex_sentences_train_no_tedx",
+          "shuffle_seed": 42
         },
         "sentences_test": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex_no_tedx/test.parquet",
@@ -198,12 +200,14 @@
         "ptbxl_paraphrased_train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_train",
           "output": "ECG-QA/ptbxl_paraphrased_train",
-          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_train"
+          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_train",
+          "shuffle_seed": 42
         },
         "mimic_iv_ecg_paraphrased_train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_train",
           "output": "ECG-QA/mimic_iv_ecg_paraphrased_train",
-          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train"
+          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train",
+          "shuffle_seed": 42
         },
         "ptbxl_paraphrased_valid_fixed": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_valid_fixed2048",

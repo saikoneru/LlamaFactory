@@ -94,6 +94,13 @@ media paths stored in the routed columns, so the views open files that exist the
   listed in `path_columns`); markers and columns are not touched. Used for evaluation splits.
 - `"mode": "existing"` validates and registers a view that is already correct in
   place (its `source` must be its own `output`); nothing is written.
+- `"shuffle_seed": <int>` on a split (modes `rewrite` and `remap`) writes its rows in one
+  seeded random order across all shards; shard names and row counts are kept. The
+  streaming loader reads each source in file order, so a view written in its source's
+  order (ECG-QA grouped by question type) gives each optimizer step rows of a single
+  task. A shuffled split is built as a whole: rebuild it with `--overwrite`. It is set
+  on the ECG-QA and Speech2Latex training splits; validation splits keep their order,
+  so `eval_loss` stays comparable across runs.
 
 ```bash
 ROOT=/leonardo_scratch/fast/trans_f3/dvps-multimodal
