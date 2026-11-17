@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "_comment": "ECG-QA with labelled, chronological ECG pairs (payload_pairs), for the boundary-token ablation. Training views as in encoder_views_leonardo.json; eval files as in the bench manifest. Builds into the smestici workspace, not the shared views.",
+  "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr/config.json",
+  "registry_template": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data/dataset_info.json",
+  "path_map": [
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/data/video-lipreading/video-pipeline/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/lipcrops_180hours/media/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/models/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/models/"
+    ]
+  ],
+  "routes": {
+    "qwen_vision": {
+      "encoder": "qwen_native_vision",
+      "native": true,
+      "marker": "<image>",
+      "column": "images"
+    },
+    "qwen_audio": {
+      "encoder": "qwen_native_audio",
+      "native": true,
+      "marker": "<audio>",
+      "column": "audios"
+    },
+    "terramind": {
+      "encoder": "terramind",
+      "marker": "<terramind>",
+      "column": "terramind",
+      "required_modalities": [
+        "S1GRD",
+        "S2L2A"
+      ],
+      "min_modalities": 1
+    },
+    "medgemma": {
+      "encoder": "medgemma",
+      "marker": "<medgemma>",
+      "column": "medgemma"
+    },
+    "autoavsr_audio": {
+      "encoder": "autoavsr_audio",
+      "marker": "<autoavsr_audio>",
+      "column": "autoavsr_audio"
+    },
+    "autoavsr_video": {
+      "encoder": "autoavsr_video",
+      "marker": "<autoavsr_video>",
+      "column": "autoavsr_video"
+    }
+  },
+  "relative_symlinks": true,
+  "output_root": "/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/views",
+  "datasets": {
+    "ECG-QA": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "medgemma",
+          "multi_payload": true
+        }
+      ],
+      "splits": {
+        "ptbxl_paraphrased_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_train",
+          "output": "ECG-QA/ptbxl_paraphrased_train",
+          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_train",
+          "shuffle_seed": 42
+        },
+        "mimic_iv_ecg_paraphrased_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_train",
+          "output": "ECG-QA/mimic_iv_ecg_paraphrased_train",
+          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train",
+          "shuffle_seed": 42
+        },
+        "ptbxl_paraphrased_valid_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_valid_fixed2048",
+          "output": "ECG-QA/ptbxl_paraphrased_valid_fixed2048",
+          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed"
+        },
+        "mimic_iv_ecg_paraphrased_valid_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_valid_fixed2048",
+          "output": "ECG-QA/mimic_iv_ecg_paraphrased_valid_fixed2048",
+          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed"
+        }
+      },
+      "payload_pairs": {
+        "column": "medgemma",
+        "marker": "<medgemma>",
+        "drop_ties": true,
+        "times": [
+          {
+            "csv": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ecg-qa/waveforms/ptb-xl/ptbxl_database.csv",
+            "path_regex": "/(\\d+)_hr\\.png$",
+            "key_column": "ecg_id",
+            "key_int": true,
+            "time_column": "recording_date"
+          },
+          {
+            "csv": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ecg-qa/waveforms/mimic-iv-ecg/record_list.csv",
+            "path_regex": "(files/p\\d+/p\\d+/s\\d+/\\d+)\\.png$",
+            "key_column": "path",
+            "time_column": "ecg_time"
+          }
+        ],
+        "rules": [
+          {
+            "name": "consecutive",
+            "match": "(?i)previous|recent",
+            "labels": [
+              "Previous ECG: ",
+              "Recent ECG: "
+            ],
+            "chronological": true
+          },
+          {
+            "name": "irrelevant",
+            "labels": [
+              "First ECG: ",
+              "Second ECG: "
+            ]
+          }
+        ]
+      }
+    },
+    "ECG-QA-bench": {
+      "mode": "remap",
+      "path_columns": [
+        "medgemma"
+      ],
+      "payload_pairs": {
+        "column": "medgemma",
+        "marker": "<medgemma>",
+        "drop_ties": true,
+        "times": [
+          {
+            "csv": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ecg-qa/waveforms/ptb-xl/ptbxl_database.csv",
+            "path_regex": "/(\\d+)_hr\\.png$",
+            "key_column": "ecg_id",
+            "key_int": true,
+            "time_column": "recording_date"
+          },
+          {
+            "csv": "/net/storage/pr3/plgrid/plggdvps/datasets/ECG-QA/ecg-qa/waveforms/mimic-iv-ecg/record_list.csv",
+            "path_regex": "(files/p\\d+/p\\d+/s\\d+/\\d+)\\.png$",
+            "key_column": "path",
+            "time_column": "ecg_time"
+          }
+        ],
+        "rules": [
+          {
+            "name": "consecutive",
+            "match": "(?i)previous|recent",
+            "labels": [
+              "Previous ECG: ",
+              "Recent ECG: "
+            ],
+            "chronological": true
+          },
+          {
+            "name": "irrelevant",
+            "labels": [
+              "First ECG: ",
+              "Second ECG: "
+            ]
+          }
+        ]
+      },
+      "splits": {
+        "ptbxl_paraphrased_test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/ptbxl_paraphrased_test.parquet",
+          "output": "bench_data/multimodal_training_v2/ECG-QA/ptbxl_paraphrased_test.parquet"
+        },
+        "mimic_iv_ecg_paraphrased_test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/mimic_iv_ecg_paraphrased_test.parquet",
+          "output": "bench_data/multimodal_training_v2/ECG-QA/mimic_iv_ecg_paraphrased_test.parquet"
+        }
+      }
+    }
+  }
+}
