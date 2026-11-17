@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from llamafactory.data.extra_encoders import (
+    encoder_payload_text,
     encoder_columns_from_config,
     expand_encoder_markers,
     incomplete_encoder_payloads,
@@ -349,3 +350,34 @@ def test_cast_encoder_inputs_keeps_batch_indices_long():
     out = cast_encoder_inputs(payload, torch.bfloat16)
     assert out["terramind"]["batch_indices"].dtype == torch.long
     assert out["terramind"]["inputs"]["S2L2A"].dtype == torch.bfloat16
+
+
+BOUNDED_MEDGEMMA = {**SPECS[1], "bos_token": "<|vision_bos|>", "eos_token": "<|vision_eos|>"}
+BOUNDED_VOCAB = {"<|terramind|>": 1, "<|medgemma|>": 2, "<|vision_bos|>": 3, "<|vision_eos|>": 4}
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_boundary_tokens_wrap_each_payload_of_a_two_ecg_row():
+    messages = [{"role": "user", "content": "<medgemma><medgemma>\nHas the AV block resolved?"}]
+    out = prepare_encoder_messages(
+        messages, {"medgemma": ["prior.png", "recent.png"]}, [SPECS[0], BOUNDED_MEDGEMMA], _VocabTokenizer(BOUNDED_VOCAB)
+    )
+    block = "<|vision_bos|>" + "<|medgemma|>" * 256 + "<|vision_eos|>"
+    assert out[0]["content"] == block + block + "\nHas the AV block resolved?"
+    # The model still sees exactly 256 placeholders per payload.
+    assert out[0]["content"].count("<|medgemma|>") == 512
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_specs_without_boundary_tokens_expand_as_before():
+    assert encoder_payload_text(SPECS[1]) == "<|medgemma|>" * 256
+    assert encoder_payload_text(BOUNDED_MEDGEMMA) == "<|vision_bos|>" + "<|medgemma|>" * 256 + "<|vision_eos|>"
+
+
+@pytest.mark.runs_on(["cpu", "mps", "cuda"])
+def test_boundary_tokens_must_be_in_the_tokenizer():
+    messages = [{"role": "user", "content": "<medgemma>\nDescribe the ECG."}]
+    with pytest.raises(ValueError, match="vision_bos"):
+        prepare_encoder_messages(
+            messages, {"medgemma": "ecg.png"}, [SPECS[0], BOUNDED_MEDGEMMA], _VocabTokenizer({"<|terramind|>": 1, "<|medgemma|>": 2})
+        )

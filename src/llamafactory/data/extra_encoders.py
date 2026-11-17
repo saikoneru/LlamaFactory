@@ -273,6 +273,18 @@ def prepare_encoder_messages(
     return messages
 
 
+def encoder_payload_text(spec: dict[str, Any]) -> str:
+    """Text one prompt marker expands to: the encoder's placeholders, wrapped in the spec's
+    ``bos_token`` / ``eos_token`` when the checkpoint declares them.
+
+    The boundary tokens mark where each payload starts and ends, so two payloads of one
+    encoder (a two-ECG comparison) are not one undivided run of identical placeholders.
+    Keep in step with ``omni_composite.encoders_base.encoder_payload_text``.
+    """
+    payload = str(spec["placeholder_token"]) * int(spec["num_tokens"])
+    return f"{spec.get('bos_token') or ''}{payload}{spec.get('eos_token') or ''}"
+
+
 def split_encoder_payloads(sample: Any) -> list[Any]:
     """Split one dataset cell into ordered payloads, one per prompt marker.
 
@@ -306,12 +318,12 @@ def expand_encoder_markers(
         sample = encoder_samples.get(name)
         markers = spec_prompt_markers(spec)
         placeholder = spec["placeholder_token"]
-        num_tokens = int(spec["num_tokens"])
-        if placeholder not in vocab:
-            raise ValueError(
-                f"Encoder token {placeholder!r} is missing from the tokenizer. "
-                "Load the tokenizer saved with the composite checkpoint."
-            )
+        for token in (placeholder, spec.get("bos_token"), spec.get("eos_token")):
+            if token and token not in vocab:
+                raise ValueError(
+                    f"Encoder token {token!r} is missing from the tokenizer. "
+                    "Load the tokenizer saved with the composite checkpoint."
+                )
 
         marker_count = sum(
             message["content"].count(marker)
@@ -337,7 +349,7 @@ def expand_encoder_markers(
                     f"markers per payload; found {marker_count} marker(s) for "
                     f"{expected} payload(s)."
                 )
-            replacement = placeholder * num_tokens
+            replacement = encoder_payload_text(spec)
 
         for message in messages:
             for marker in markers:
