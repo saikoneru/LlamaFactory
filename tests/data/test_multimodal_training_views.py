@@ -762,7 +762,7 @@ def test_payload_pairs_in_a_remap_build(tmp_path):
             {
                 "version": 1,
                 "output_root": str(tmp_path / "out"),
-                "routes": {},
+                "routes": {"qwen_vision": {"native": True, "marker": "<image>", "column": "images"}},
                 "datasets": {
                     "ECG-QA": {
                         "mode": "remap",
@@ -793,7 +793,7 @@ def test_payload_pairs_need_a_written_view_and_two_labels(tmp_path):
                 {
                     "version": 1,
                     "output_root": str(tmp_path / "out"),
-                    "routes": {},
+                    "routes": {"qwen_vision": {"native": True, "marker": "<image>", "column": "images"}},
                     "datasets": {
                         "ECG-QA": {
                             "mode": mode,
