@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Union
 
 from ..extras import logging
-from .box_format import normalize_boxes
+from .box_format import normalize_boxes, to_qwen_markers
 from .data_utils import Role
 
 import io
@@ -319,6 +319,9 @@ class SharegptDatasetConverter(DatasetConverter):
                     broken_data = True
                     break
                 content = normalized.text
+                if self.dataset_attr.box_target == "qwen":
+                    # Rendered in pixels by the Qwen plugin, which knows the resized image size.
+                    content = to_qwen_markers(content)
 
             aligned_messages.append(
                 {

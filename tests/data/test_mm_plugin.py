@@ -529,3 +529,32 @@ def test_lfm2_vl_plugin():
     assert lfm2_vl_plugin.video_token is None
     assert lfm2_vl_plugin.audio_token is None
     assert lfm2_vl_plugin.__class__.__name__ == "LFMVLPlugin"
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_qwen_plugins_render_qwen_boxes_in_pixels_of_the_image_grid():
+    # A 36 x 36 grid of 14-pixel patches: the 504 x 504 input a 512 x 512 image becomes.
+    processor = SimpleNamespace(image_processor=SimpleNamespace(patch_size=14))
+    for name in ("qwen2_vl", "qwen2_omni"):
+        plugin = get_mm_plugin(name=name, image_token="<|image_pad|>", video_token="<|video_pad|>")
+        messages = [
+            {"role": "user", "content": "<image>[refer] give me the location of <p>1 car</p>"},
+            {"role": "assistant", "content": "<qwen_box>25,40,33,60,0</qwen_box>"},
+        ]
+        plugin._render_qwen_boxes(messages, [Image.new("RGB", (512, 512))], processor, [torch.tensor([1, 36, 36])])
+        assert messages[1]["content"] == '{"bbox_2d": [126, 202, 166, 302]}'
+        assert messages[0]["content"] == "<image>[refer] give me the location of <p>1 car</p>"
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_qwen_boxes_need_one_image_and_a_qwen_plugin():
+    processor = SimpleNamespace(image_processor=SimpleNamespace(patch_size=14))
+    plugin = get_mm_plugin(name="qwen2_omni", image_token="<|image_pad|>", video_token="<|video_pad|>")
+    messages = [{"role": "assistant", "content": "<qwen_box>1,2,3,4,0</qwen_box>"}]
+    with pytest.raises(ValueError, match="exactly one image"):
+        plugin._render_qwen_boxes(messages, [], processor, [])
+    # Any other plugin refuses markers instead of training on them as text.
+    with pytest.raises(ValueError, match="box_target: qwen"):
+        get_mm_plugin(name="base")._validate_messages(messages, [], [], [])
+    with pytest.raises(ValueError, match="box_target: qwen"):
+        get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>")._validate_messages(messages, [], [], [])

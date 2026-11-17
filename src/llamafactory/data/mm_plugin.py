@@ -38,6 +38,7 @@ from typing_extensions import override
 
 from ..extras.constants import AUDIO_PLACEHOLDER, IGNORE_INDEX, IMAGE_PLACEHOLDER, VIDEO_PLACEHOLDER
 from ..extras.nvtx import nvtx_range
+from .box_format import has_qwen_boxes, render_qwen_boxes
 from ..extras.packages import is_pillow_available, is_pyav_available, is_transformers_version_greater_than
 
 
@@ -236,6 +237,36 @@ class MMPluginMixin:
             raise ValueError(
                 f"The number of audios does not match the number of {AUDIO_PLACEHOLDER} tokens in {messages}."
             )
+
+        if not getattr(self, "_renders_qwen_boxes", False) and any(
+            has_qwen_boxes(message["content"]) for message in messages
+        ):
+            raise ValueError("`box_target: qwen` needs a Qwen2-VL or Qwen2.5-Omni template.")
+
+    def _render_qwen_boxes(
+        self,
+        messages: list[dict[str, str]],
+        images: list["ImageInput"],
+        processor: Optional["MMProcessor"],
+        image_grid_thw: Any,
+    ) -> None:
+        r"""Render ``box_target: qwen`` markers in pixels of the example's resized image, in place.
+
+        The grid is in patches of the resized image, so its pixel size is grid x patch_size: the
+        coordinate space Qwen2.5-VL reads and writes boxes in.
+        """
+        if not any(has_qwen_boxes(message["content"]) for message in messages):
+            return
+        if len(images) != 1:
+            raise ValueError(f"Qwen boxes need exactly one image per example, got {len(images)}.")
+
+        grid = image_grid_thw[0] if len(image_grid_thw) else None
+        if grid is None:  # tokens not expanded: get the grid anyway
+            grid = self._get_mm_inputs(images, [], [], processor)["image_grid_thw"][0]
+        patch_size = getattr(getattr(processor, "image_processor", None), "patch_size", 14)
+        _, grid_h, grid_w = (int(value) for value in grid)
+        for message in messages:
+            message["content"] = render_qwen_boxes(message["content"], grid_w * patch_size, grid_h * patch_size)
 
     def _preprocess_image(
         self, image: "ImageObject", image_max_pixels: int, image_min_pixels: int, **kwargs
@@ -2327,6 +2358,8 @@ class Qwen2AudioPlugin(BasePlugin):
 class Qwen2VLPlugin(BasePlugin):
     vision_bos_token: str = "<|vision_start|>"
     vision_eos_token: str = "<|vision_end|>"
+    # Renders `box_target: qwen` markers (also for Qwen2OmniPlugin). Not a dataclass field.
+    _renders_qwen_boxes = True
 
     @override
     def _preprocess_image(self, image: "ImageObject", **kwargs) -> "ImageObject":
@@ -2653,6 +2686,7 @@ class Qwen2VLPlugin(BasePlugin):
             image_grid_thw = [None] * len(images)
             video_grid_thw = [None] * len(videos)
 
+        self._render_qwen_boxes(messages, images, processor, image_grid_thw)
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:
@@ -2680,6 +2714,8 @@ class Qwen2VLPlugin(BasePlugin):
 
 @dataclass
 class Qwen3VLPlugin(Qwen2VLPlugin):
+    _renders_qwen_boxes = False  # own process_messages, which does not render them
+
     @override
     def _get_qwen_video_resize(
         self,
@@ -2854,6 +2890,8 @@ class Qwen3VLPlugin(Qwen2VLPlugin):
 
 @dataclass
 class GLM4VPlugin(Qwen2VLPlugin):
+    _renders_qwen_boxes = False  # own process_messages, which does not render them
+
     @override
     def _get_mm_inputs(
         self,
@@ -3078,6 +3116,7 @@ class Qwen2OmniPlugin(Qwen2VLPlugin):
             video_grid_thw = [None] * len(videos)
             audio_lengths = [None] * len(audios)
 
+        self._render_qwen_boxes(messages, images, processor, image_grid_thw)
         for message in messages:
             content = message["content"]
             while IMAGE_PLACEHOLDER in content:

@@ -23,6 +23,9 @@ Source formats, set per dataset as ``box_format`` in ``dataset_info.json``:
 - ``geochat``, ``percent``: ``{<x1><y1><x2><y2>}``, with or without ``|<angle>``, in [0, 100].
 - ``unit_list``: ``[x1 y1, x2 y2]`` in [0, 1], and ``<point>(x, y)</point>`` in [0, 1].
 
+``box_target: qwen`` (default ``geochat``) then trains the normalized boxes in Qwen2.5-VL's own
+format instead: ``{"bbox_2d": [x1, y1, x2, y2]}`` in pixels of the resized image (see below).
+
 A box that is out of range, has reversed corners, or is cut off makes the message invalid.
 Such boxes are never repaired: a value like ``<981>`` is probably truncated, so clipping it
 would produce a wrong label that looks correct.
@@ -172,3 +175,62 @@ def normalize_boxes(
     stats = Counter()
     converted, valid = _NORMALIZERS[box_format](text, default_angle, canonical_angle, stats)
     return NormalizedText(converted, valid, stats)
+
+
+# --- Qwen2.5-VL target -----------------------------------------------------------------------------
+#
+# ``box_target: qwen`` trains boxes as Qwen2.5-VL writes them: ``{"bbox_2d": [x1, y1, x2, y2]}`` in
+# pixels of the image the model sees, i.e. after LLaMA-Factory's ``image_max_pixels`` resize and the
+# processor's patch rounding. That size is only known in the Qwen multimodal plugins, so the converter
+# leaves a marker per normalized box and the plugin renders it with the example's image grid.
+#
+# GeoChat's angle rotates the given corners clockwise about their centre (0 = upright). Qwen's format
+# has no angle, so a rotated box becomes its upright enclosing box, computed in pixels so that
+# non-square images are not distorted.
+
+BOX_TARGETS = ("geochat", "qwen")
+_QWEN_MARKER = re.compile(r"<qwen_box>(\d+),(\d+),(\d+),(\d+),(\d+)</qwen_box>")
+
+
+def to_qwen_markers(text: str) -> str:
+    r"""Replace normalized ``{<x1><y1><x2><y2>|<angle>}`` boxes with markers a Qwen plugin renders."""
+
+    def replace(match: re.Match) -> str:
+        x1, y1, x2, y2 = match.group(1, 2, 3, 4)
+        return f"<qwen_box>{x1},{y1},{x2},{y2},{match.group(5) or 0}</qwen_box>"
+
+    return _BRACED_BOX.sub(replace, text)
+
+
+def has_qwen_boxes(text: str) -> bool:
+    return "<qwen_box>" in text
+
+
+def enclosing_pixel_box(
+    x1: int, y1: int, x2: int, y2: int, angle: int, width: int, height: int
+) -> tuple[int, int, int, int]:
+    r"""Upright enclosing box, in pixels of a ``width`` x ``height`` image, of a percent box at ``angle``."""
+    left, top = x1 / COORDINATE_MAX * width, y1 / COORDINATE_MAX * height
+    right, bottom = x2 / COORDINATE_MAX * width, y2 / COORDINATE_MAX * height
+    if angle % 180:
+        theta = math.radians(angle)
+        center_x, center_y = (left + right) / 2, (top + bottom) / 2
+        box_w, box_h = right - left, bottom - top
+        half_w = (abs(box_w * math.cos(theta)) + abs(box_h * math.sin(theta))) / 2
+        half_h = (abs(box_w * math.sin(theta)) + abs(box_h * math.cos(theta))) / 2
+        left, right, top, bottom = center_x - half_w, center_x + half_w, center_y - half_h, center_y + half_h
+
+    def clip(value: float, limit: int) -> int:
+        return min(max(_round_half_up(value), 0), limit)
+
+    return clip(left, width), clip(top, height), clip(right, width), clip(bottom, height)
+
+
+def render_qwen_boxes(text: str, width: int, height: int) -> str:
+    r"""Render the markers in ``text`` as Qwen2.5-VL ``{"bbox_2d": [...]}`` in pixels."""
+
+    def replace(match: re.Match) -> str:
+        box = enclosing_pixel_box(*(int(value) for value in match.groups()), width, height)
+        return '{"bbox_2d": [' + ", ".join(str(value) for value in box) + "]}"
+
+    return _QWEN_MARKER.sub(replace, text)

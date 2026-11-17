@@ -199,3 +199,25 @@ def test_resuming_past_an_invalid_box_lands_on_the_same_row():
     for count in range(1, len(rows)):
         resumed = list(aligned.skip_before_align(count))
         assert [row["_response"] for row in resumed] == [row["_response"] for row in full[count:]]
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_sharegpt_converter_marks_boxes_for_the_qwen_target():
+    attr = _sharegpt_attr(box_format="geochat", canonical_box_angle=True, box_target="qwen")
+    converter = get_dataset_converter("sharegpt", attr, DataArguments())
+    output = converter(_box_example("<image>[refer] give me the location of <p>1 car</p>", "{<49><45><51><55>|<90>}"))
+    assert output["_prompt"][0]["content"] == "<image>[refer] give me the location of <p>1 car</p>"
+    # Canonicalized first (90 -> 0 with the corners swapped), then marked for the plugin.
+    assert output["_response"][0]["content"] == "<qwen_box>45,49,55,51,0</qwen_box>"
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_box_target_is_validated():
+    base = {"formatting": "sharegpt", "box_format": "geochat"}
+    attr = DatasetAttr("hf_hub", "name")
+    attr.join(base)
+    assert attr.box_target == "geochat"
+    with pytest.raises(ValueError, match="box_target"):
+        DatasetAttr("hf_hub", "name").join({**base, "box_target": "pixels"})
+    with pytest.raises(ValueError, match="box_format"):
+        DatasetAttr("hf_hub", "name").join({"formatting": "sharegpt", "box_target": "qwen"})
