@@ -38,6 +38,7 @@ echo "===== NODE INFO ====="
 echo "Running on node: $(hostname)"
 echo "Architecture:   $(uname -m)"
 echo "YAML:           ${YAML}"
+echo "LLaMA-Factory:  ${LF_SRC:-shared checkout}"
 echo "W&B project:    ${WANDB_PROJECT}"
 
 # x86_64 / A100 env pinned to the Helios package versions (torch 2.13.0+cu126); CUDA comes from the wheels.
@@ -46,7 +47,8 @@ unset PYTHONPATH  # the module's PYTHONPATH would shadow the venv
 source /leonardo_scratch/fast/trans_f3/dvps-multimodal/envs/dvps_train/bin/activate
 
 # rcorrente's LLaMA-Factory checkout on Leonardo (same commit as Helios), used read-only.
-export PYTHONPATH=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/src
+# LF_SRC points a run at another checkout's src/ (e.g. a feature branch) without touching it.
+export PYTHONPATH="${LF_SRC:-/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/src}"
 export DISABLE_VERSION_CHECK=1
 export TOKENIZERS_PARALLELISM=false
 # The shared cache and W&B folders belong to one user; others get a per-user copy.

@@ -1,0 +1,80 @@
+### Boundary-token ablation, variant C_bounds_pairs: Boundary tokens + ECG-QA pairs labelled (Previous/Recent, First/Second) and in chronological order.
+### Same for all variants: ECG data only (ECG-QA PTB-XL / MIMIC-IV, ECG-Instruct PTB-XL / MIMIC, weights as in
+### dvps_v1-v3), Thinker LoRA r16 + projectors from the composite base (same projector init), lr 2e-5,
+### 1 node x 4 A100, batch 4 x accum 8 = 128 per step (as v1-v3), 1000 steps, seed 43.
+# Submit with (our branch of LLaMA-Factory, which expands the boundary tokens):
+#   sbatch --nodes=1 --job-name=abl_C_bounds_pairs --export=ALL,LF_SRC=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/src \
+#     /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm-ablation
+
+### model
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr_bounds
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train
+mix_strategy: interleave_over
+interleave_probs: 0.26, 0.28, 0.21, 0.25
+eval_dataset: ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_instruct_mimic_medgemma_val_fixed
+eval_interleave_probs: 0.26, 0.28, 0.21, 0.25
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 4096
+dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/views
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 1024
+preprocessing_batch_size: 1024
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+use_stateful_dataloader: true
+max_steps: 1000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/ablation_bounds/C_bounds_pairs
+logging_steps: 10
+save_strategy: steps
+save_steps: 250
+save_total_limit: 2
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: wandb
+run_name: ablation-bounds-C_bounds_pairs
+use_reentrant_gc: false
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 8
+learning_rate: 2.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: null
+seed: 43
+max_grad_norm: 1.0
+
+### eval
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 250
+max_eval_samples: 1024
