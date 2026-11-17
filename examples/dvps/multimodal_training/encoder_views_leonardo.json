@@ -77,12 +77,18 @@
         "train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/train",
           "output": "GeoChat_Instruct/train",
-          "dataset_info": "mmtrain_geochat_qwen_train"
+          "dataset_info": [
+            "mmtrain_geochat_qwen_train",
+            "mmtrain_geochat_qwen_train_boxnorm"
+          ]
         },
         "val": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/val",
           "output": "GeoChat_Instruct/val",
-          "dataset_info": "mmtrain_geochat_qwen_val"
+          "dataset_info": [
+            "mmtrain_geochat_qwen_val",
+            "mmtrain_geochat_qwen_val_boxnorm"
+          ]
         }
       }
     },
@@ -263,12 +269,18 @@
         "train": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/train",
           "output": "BigEarthNet.txt_s1s2/train",
-          "dataset_info": "benx_s1s2_train"
+          "dataset_info": [
+            "benx_s1s2_train",
+            "benx_s1s2_train_boxnorm"
+          ]
         },
         "val": {
           "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/val.parquet",
           "output": "BigEarthNet.txt_s1s2/val",
-          "dataset_info": "benx_s1s2_val"
+          "dataset_info": [
+            "benx_s1s2_val",
+            "benx_s1s2_val_boxnorm"
+          ]
         }
       }
     },

@@ -67,11 +67,11 @@ freeze_vision_tower: true
 freeze_multi_modal_projector: false
 
 ### dataset
-dataset: benx_s1s2_train, mmtrain_geochat_qwen_train, rsvqa_hr_train, mmtrain_rsteller_qwen_train, aya_train, mmtrain_lipcrops_autoavsr_av_train, audio_flan_slu_train, speech2latex_sentences_train_no_tedx, speech2latex_equations_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train, acdc_medgemma_train, mnm2_medgemma_train, emidec_medgemma_train, lnqa_train
+dataset: benx_s1s2_train_boxnorm, mmtrain_geochat_qwen_train_boxnorm, rsvqa_hr_train, mmtrain_rsteller_qwen_train, aya_train, mmtrain_lipcrops_autoavsr_av_train, audio_flan_slu_train, speech2latex_sentences_train_no_tedx, speech2latex_equations_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train, acdc_medgemma_train, mnm2_medgemma_train, emidec_medgemma_train, lnqa_train
 mix_strategy: interleave_over
 interleave_probs: 0.145, 0.06, 0.065, 0.06, 0.07, 0.11, 0.075, 0.03, 0.02, 0.055, 0.06, 0.045, 0.055, 0.03, 0.02, 0.03, 0.07
 # Speech2LaTeX has no validation split; its test splits are used for loss monitoring only.
-eval_dataset: benx_s1s2_val, mmtrain_geochat_qwen_val, rsvqa_hr_val, mmtrain_rsteller_qwen_eval, aya_val, mmtrain_lipcrops_autoavsr_av_val, audio_flan_slu_val, speech2latex_sentences_test_no_tedx, speech2latex_equations_test, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_instruct_mimic_medgemma_val_fixed, acdc_medgemma_val, mnm2_medgemma_val, emidec_medgemma_val, lnqa_val
+eval_dataset: benx_s1s2_val_boxnorm, mmtrain_geochat_qwen_val_boxnorm, rsvqa_hr_val, mmtrain_rsteller_qwen_eval, aya_val, mmtrain_lipcrops_autoavsr_av_val, audio_flan_slu_val, speech2latex_sentences_test_no_tedx, speech2latex_equations_test, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_instruct_mimic_medgemma_val_fixed, acdc_medgemma_val, mnm2_medgemma_val, emidec_medgemma_val, lnqa_val
 eval_interleave_probs: 0.145, 0.06, 0.065, 0.06, 0.07, 0.11, 0.075, 0.03, 0.02, 0.055, 0.06, 0.045, 0.055, 0.03, 0.02, 0.03, 0.07
 eval_on_each_dataset: true
 template: qwen2_omni
