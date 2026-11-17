@@ -3017,7 +3017,8 @@
       "system_tag": "system"
     },
     "box_format": "geochat",
-    "default_box_angle": 0
+    "default_box_angle": 0,
+    "canonical_box_angle": true
   },
   "mmtrain_geochat_qwen_val_boxnorm": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/GeoChat_Instruct/val",
@@ -3034,7 +3035,8 @@
       "system_tag": "system"
     },
     "box_format": "geochat",
-    "default_box_angle": 0
+    "default_box_angle": 0,
+    "canonical_box_angle": true
   },
   "benx_s1s2_train_boxnorm": {
     "file_name": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/train",
