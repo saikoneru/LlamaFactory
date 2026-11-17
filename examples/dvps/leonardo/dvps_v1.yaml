@@ -1,0 +1,124 @@
+### LEONARDO COPY of examples/dvps/dvps_v1.yaml (rcorrente, Helios). Changed: model, dataset_dir,
+### output_dir, per_device_train_batch_size, and the resume settings below.
+# Submit with:
+#   sbatch --job-name=dvps_v1 /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
+### [v1] Thinker LoRA R=16 and full training of the TerraMind, MedGemma, and Auto-AVSR projectors.
+### Qwen's vision and audio towers and its native projectors stay frozen. max_steps is 60000.
+### Resumes the Helios checkpoint-10000 (Helios stopped at step 10210) on 8 A100s. The saved
+### data position was written by 4 ranks x batch 8 and cannot be restored on 8 ranks x batch 4,
+### so stateful_dataloader_reset starts a new stream and seed 43 (was 42) reshuffles it.
+# wandb_entity: DVPS-ai
+# wandb_project: dvps-fm
+# wandb_run_id: 0kga7xdr
+###
+### Weights match interleave_probs (sum 1.00). AMI is not in this mix.
+###   Geo-Intelligence (0.33)
+###     0.145 benx_s1s2_train                                   <terramind> S1GRD + S2L2A
+###     0.06  mmtrain_geochat_qwen_train                        native <image>
+###     0.065  rsvqa_hr_train                                    native <image>
+###     0.06  mmtrain_rsteller_qwen_train                       native <image>
+###   Language Communication (0.305)
+###     0.07  aya_train                                         text-only
+###     0.11  mmtrain_lipcrops_autoavsr_av_train                <autoavsr_audio> + <autoavsr_video>
+###     0.075 audio_flan_slu_train                              native <audio>
+###     0.03  speech2latex_sentences_train_no_tedx              native <audio>
+###     0.02  speech2latex_equations_train                      native <audio>
+###   Cardiology (0.295)
+###     0.055  ecg_qa_ptbxl_paraphrased_medgemma_train           <medgemma>
+###     0.06  ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train    <medgemma>
+###     0.045 ecg_instruct_ptbxl_medgemma_train                 <medgemma>
+###     0.055 ecg_instruct_mimic_medgemma_train                 <medgemma>
+###     0.03  acdc_medgemma_train                               <medgemma>
+###     0.02  mnm2_medgemma_train                               <medgemma>
+###     0.03  emidec_medgemma_train                             <medgemma>
+###   General-purpose (0.07)
+###     0.07  lnqa_train                                        native <image>
+### 8 GPUs (2 Booster nodes x 4 A100 64 GB): per_device_train_batch_size 8 -> 4 because bs 8 ran out of
+### memory on a 64 GB A100 (smoke test 2026-11-16). gradient_accumulation_steps stays 4, so the global
+### batch stays 4 x 4 x 8 = 128, as on Helios (8 x 4 x 4 GH200).
+
+### model
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: benx_s1s2_train, mmtrain_geochat_qwen_train, rsvqa_hr_train, mmtrain_rsteller_qwen_train, aya_train, mmtrain_lipcrops_autoavsr_av_train, audio_flan_slu_train, speech2latex_sentences_train_no_tedx, speech2latex_equations_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_instruct_mimic_medgemma_train, acdc_medgemma_train, mnm2_medgemma_train, emidec_medgemma_train, lnqa_train
+mix_strategy: interleave_over
+interleave_probs: 0.145, 0.06, 0.065, 0.06, 0.07, 0.11, 0.075, 0.03, 0.02, 0.055, 0.06, 0.045, 0.055, 0.03, 0.02, 0.03, 0.07
+# Speech2LaTeX has no validation split; its test splits are used for loss monitoring only.
+eval_dataset: benx_s1s2_val, mmtrain_geochat_qwen_val, rsvqa_hr_val, mmtrain_rsteller_qwen_eval, aya_val, mmtrain_lipcrops_autoavsr_av_val, audio_flan_slu_val, speech2latex_sentences_test_no_tedx, speech2latex_equations_test, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_instruct_mimic_medgemma_val_fixed, acdc_medgemma_val, mnm2_medgemma_val, emidec_medgemma_val, lnqa_val
+eval_interleave_probs: 0.145, 0.06, 0.065, 0.06, 0.07, 0.11, 0.075, 0.03, 0.02, 0.055, 0.06, 0.045, 0.055, 0.03, 0.02, 0.03, 0.07
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 4096
+dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+use_stateful_dataloader: true
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+
+### output
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v1
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: wandb
+run_name: dvps-v1-lr-1e-4
+
+### train
+use_reentrant_gc: false
+per_device_train_batch_size: 4  # Leonardo: 8 GPUs x 4 (was 8 on 4 GH200)
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v1/checkpoint-10000
+stateful_dataloader_reset: true
+seed: 43
+max_grad_norm: 1.0
+
+
+### eval
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+# eval_loss is the mean of the per-dataset validation losses, weighted by
+# eval_interleave_probs. The best checkpoint by eval_loss is kept on top of
+# the 3 most recent ones. No early_stopping_steps: early stopping is disabled.
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+
+
+

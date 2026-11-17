@@ -1,0 +1,431 @@
+{
+  "version": 1,
+  "_comment": "Leonardo build of the views used by examples/dvps/leonardo/dvps_v1..v4, into the common folder dvps-multimodal/. Sources are written as Helios paths and translated by path_map.",
+  "checkpoint_config": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr/config.json",
+  "output_root": "/leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training",
+  "registry_template": "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/LLaMA-Factory/data/dataset_info.json",
+  "path_map": [
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/datasets/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/data/video-lipreading/video-pipeline/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/datasets/lipcrops_180hours/media/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/"
+    ],
+    [
+      "/net/storage/pr3/plgrid/plggdvps/rcorrente/models/",
+      "/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/models/"
+    ]
+  ],
+  "routes": {
+    "qwen_vision": {
+      "encoder": "qwen_native_vision",
+      "native": true,
+      "marker": "<image>",
+      "column": "images"
+    },
+    "qwen_audio": {
+      "encoder": "qwen_native_audio",
+      "native": true,
+      "marker": "<audio>",
+      "column": "audios"
+    },
+    "terramind": {
+      "encoder": "terramind",
+      "marker": "<terramind>",
+      "column": "terramind",
+      "required_modalities": [
+        "S1GRD",
+        "S2L2A"
+      ],
+      "min_modalities": 1
+    },
+    "medgemma": {
+      "encoder": "medgemma",
+      "marker": "<medgemma>",
+      "column": "medgemma"
+    },
+    "autoavsr_audio": {
+      "encoder": "autoavsr_audio",
+      "marker": "<autoavsr_audio>",
+      "column": "autoavsr_audio"
+    },
+    "autoavsr_video": {
+      "encoder": "autoavsr_video",
+      "marker": "<autoavsr_video>",
+      "column": "autoavsr_video"
+    }
+  },
+  "datasets": {
+    "GeoChat_Instruct": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_vision"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/train",
+          "output": "GeoChat_Instruct/train",
+          "dataset_info": "mmtrain_geochat_qwen_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/GeoChat_Instruct/sharegpt/val",
+          "output": "GeoChat_Instruct/val",
+          "dataset_info": "mmtrain_geochat_qwen_val"
+        }
+      }
+    },
+    "RSTeller": {
+      "mode": "symlink",
+      "routes": [
+        {
+          "route": "qwen_vision"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSTeller/sharegpt/train",
+          "output": "RSTeller/train",
+          "dataset_info": "mmtrain_rsteller_qwen_train"
+        },
+        "eval": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSTeller/sharegpt/eval",
+          "output": "RSTeller/eval",
+          "dataset_info": "mmtrain_rsteller_qwen_eval"
+        }
+      }
+    },
+    "RSVQA-HR": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_vision"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSVQA-HR/rsvqa-hr_sharegpt/train",
+          "output": "RSVQA-HR/train",
+          "dataset_info": "rsvqa_hr_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/RSVQA-HR/rsvqa-hr_sharegpt/val.parquet",
+          "output": "RSVQA-HR/val.parquet",
+          "dataset_info": "rsvqa_hr_val"
+        }
+      }
+    },
+    "LNQA": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_vision"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/train",
+          "output": "LNQA/train",
+          "dataset_info": "lnqa_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/LNQA/sharegpt/val.parquet",
+          "output": "LNQA/val.parquet",
+          "dataset_info": "lnqa_val"
+        }
+      }
+    },
+    "Speech2Latex": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_audio"
+        }
+      ],
+      "splits": {
+        "equations_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/equations_train.parquet",
+          "output": "Speech2Latex/equations_train.parquet",
+          "dataset_info": "speech2latex_equations_train"
+        },
+        "equations_test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex/converted_all/equations_test.parquet",
+          "output": "Speech2Latex/equations_test.parquet",
+          "dataset_info": "speech2latex_equations_test"
+        }
+      }
+    },
+    "Speech2Latex_no_tedx": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_audio"
+        }
+      ],
+      "splits": {
+        "sentences_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex_no_tedx/train.parquet",
+          "output": "Speech2Latex_no_tedx/train.parquet",
+          "dataset_info": "speech2latex_sentences_train_no_tedx"
+        },
+        "sentences_test": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Speech2Latex_no_tedx/test.parquet",
+          "output": "Speech2Latex_no_tedx/test.parquet",
+          "dataset_info": "speech2latex_sentences_test_no_tedx"
+        }
+      }
+    },
+    "ECG-QA": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "medgemma",
+          "multi_payload": true
+        }
+      ],
+      "splits": {
+        "ptbxl_paraphrased_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_train",
+          "output": "ECG-QA/ptbxl_paraphrased_train",
+          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_train"
+        },
+        "mimic_iv_ecg_paraphrased_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_train",
+          "output": "ECG-QA/mimic_iv_ecg_paraphrased_train",
+          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train"
+        },
+        "ptbxl_paraphrased_valid_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/ptbxl_paraphrased_valid_fixed2048",
+          "output": "ECG-QA/ptbxl_paraphrased_valid_fixed2048",
+          "dataset_info": "ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed"
+        },
+        "mimic_iv_ecg_paraphrased_valid_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-QA/sharded/mimic_iv_ecg_paraphrased_valid_fixed2048",
+          "output": "ECG-QA/mimic_iv_ecg_paraphrased_valid_fixed2048",
+          "dataset_info": "ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed"
+        }
+      }
+    },
+    "ECG-Instruct": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "medgemma",
+          "multi_payload": true
+        }
+      ],
+      "splits": {
+        "ptbxl_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/ptbxl_train",
+          "output": "ECG-Instruct/ptbxl_train",
+          "dataset_info": "ecg_instruct_ptbxl_medgemma_train"
+        },
+        "mimic_train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/mimic_train",
+          "output": "ECG-Instruct/mimic_train",
+          "dataset_info": "ecg_instruct_mimic_medgemma_train"
+        },
+        "ptbxl_val_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/ptbxl_val_fixed2048",
+          "output": "ECG-Instruct/ptbxl_val_fixed2048",
+          "dataset_info": "ecg_instruct_ptbxl_medgemma_val_fixed"
+        },
+        "mimic_val_fixed": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training_v2/ECG-Instruct/sharded/mimic_val_fixed2048",
+          "output": "ECG-Instruct/mimic_val_fixed2048",
+          "dataset_info": "ecg_instruct_mimic_medgemma_val_fixed"
+        }
+      }
+    },
+    "BigEarthNet.txt_s1s2": {
+      "mode": "symlink",
+      "routes": [
+        {
+          "route": "terramind"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/train",
+          "output": "BigEarthNet.txt_s1s2/train",
+          "dataset_info": "benx_s1s2_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/BigEarthNet.txt/benx_llamafactory_s1s2/val.parquet",
+          "output": "BigEarthNet.txt_s1s2/val",
+          "dataset_info": "benx_s1s2_val"
+        }
+      }
+    },
+    "Aya": {
+      "mode": "symlink",
+      "text_only": true,
+      "routes": [],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Aya/sharegpt/train",
+          "output": "Aya/train",
+          "dataset_info": "aya_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Aya/sharegpt/val.parquet",
+          "output": "Aya/val",
+          "dataset_info": "aya_val"
+        }
+      }
+    },
+    "ACDC": {
+      "mode": "existing",
+      "routes": [
+        {
+          "route": "medgemma"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ACDC/train.parquet",
+          "output": "ACDC/train.parquet",
+          "dataset_info": "acdc_medgemma_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/ACDC/val.parquet",
+          "output": "ACDC/val.parquet",
+          "dataset_info": "acdc_medgemma_val"
+        }
+      }
+    },
+    "MnM2": {
+      "mode": "existing",
+      "routes": [
+        {
+          "route": "medgemma"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/MnM2/train.parquet",
+          "output": "MnM2/train.parquet",
+          "dataset_info": "mnm2_medgemma_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/MnM2/val.parquet",
+          "output": "MnM2/val.parquet",
+          "dataset_info": "mnm2_medgemma_val"
+        }
+      }
+    },
+    "emidec": {
+      "mode": "existing",
+      "routes": [
+        {
+          "route": "medgemma"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/emidec/train.parquet",
+          "output": "emidec/train.parquet",
+          "dataset_info": "emidec_medgemma_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/multimodal_training/emidec/val.parquet",
+          "output": "emidec/val.parquet",
+          "dataset_info": "emidec_medgemma_val"
+        }
+      }
+    },
+    "Audio-FLAN_SLU": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "qwen_audio"
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Audio-FLAN/SLU/sharegpt/train",
+          "output": "Audio-FLAN_SLU/train",
+          "dataset_info": "audio_flan_slu_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/Audio-FLAN/SLU/sharegpt/val.parquet",
+          "output": "Audio-FLAN_SLU/val.parquet",
+          "dataset_info": "audio_flan_slu_val"
+        }
+      }
+    },
+    "lipcrops_180hours_autoavsr_av": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_audio",
+          "source_column": "audios",
+          "fallback_markers": [
+            "<audio>"
+          ]
+        },
+        {
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
+          "output": "lipcrops_180hours_autoavsr_av/train.parquet",
+          "dataset_info": "mmtrain_lipcrops_autoavsr_av_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
+          "output": "lipcrops_180hours_autoavsr_av/val.parquet",
+          "dataset_info": "mmtrain_lipcrops_autoavsr_av_val"
+        }
+      }
+    },
+    "lipcrops_180hours_autoavsr_video": {
+      "mode": "rewrite",
+      "routes": [
+        {
+          "route": "autoavsr_video",
+          "source_column": "lipread",
+          "fallback_markers": [
+            "<lipread>"
+          ]
+        }
+      ],
+      "remove_markers": [
+        "<audio>"
+      ],
+      "drop_columns": [
+        "audios"
+      ],
+      "splits": {
+        "train": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_train.parquet",
+          "output": "lipcrops_180hours_autoavsr_video/train.parquet",
+          "dataset_info": "mmtrain_lipcrops_autoavsr_video_train"
+        },
+        "val": {
+          "source": "/net/storage/pr3/plgrid/plggdvps/datasets/lipcrops_180hours/lipread/av_val.parquet",
+          "output": "lipcrops_180hours_autoavsr_video/val.parquet",
+          "dataset_info": "mmtrain_lipcrops_autoavsr_video_val"
+        }
+      }
+    }
+  },
+  "relative_symlinks": true
+}

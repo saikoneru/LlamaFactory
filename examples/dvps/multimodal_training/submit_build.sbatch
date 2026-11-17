@@ -13,12 +13,14 @@
 
 set -euo pipefail
 
-ROOT=/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm
+# On another cluster override the #SBATCH lines on the command line and pass
+# DVPS_ROOT / BUILD_MODULES with --export=ALL,... (see README).
+ROOT="${DVPS_ROOT:-/net/storage/pr3/plgrid/plggdvps/rcorrente/dvps-fm}"
 RUNNER="${ROOT}/LLaMA-Factory/examples/dvps/multimodal_training/run_build.sh"
 
-module load GCC/14.3.0
-module load Python-bundle-PyPI/2025.07
-module load Arrow/22.0.0
+for module_name in ${BUILD_MODULES-GCC/14.3.0 Python-bundle-PyPI/2025.07 Arrow/22.0.0}; do
+  module load "${module_name}"
+done
 
 echo "Job ${SLURM_JOB_ID} started on $(hostname) at $(date)"
 /bin/bash "${RUNNER}" "$@"

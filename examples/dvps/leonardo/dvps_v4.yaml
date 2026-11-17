@@ -1,0 +1,126 @@
+### LEONARDO COPY of examples/dvps/dvps_v4.yaml (rcorrente, Helios). Changed: model, dataset_dir,
+### output_dir, per_device_train_batch_size, buffer_size and preprocessing_batch_size (1024 -> 128),
+### and the resume settings below.
+# Submit with:
+#   sbatch --job-name=dvps_v4 /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
+### [v4 stage 1] Projector-only SFT from the composite base checkpoint.
+### Thinker, every encoder, Qwen's native projectors, and the TerraMind
+### fusion gate stay frozen. Trainable: projectors.terramind,
+### projectors.medgemma, projectors.autoavsr_audio, projectors.autoavsr_video.
+### learning_rate 2.0e-5. max_steps is 60000; the Slurm walltime of run_train.sbatch ends each block.
+### Resumes the Helios checkpoint-11000 (Helios stopped at step 11088) on 8 A100s. The saved
+### data position was written by 4 ranks x batch 8 with buffer 1024 and cannot be restored here,
+### so stateful_dataloader_reset starts a new stream and seed 43 (was 42) reshuffles it.
+# wandb_entity: DVPS-ai
+# wandb_project: dvps-fm
+# wandb_run_id: vlb9dt96
+###
+### Only datasets that reach an extra encoder. interleave_probs sum to 0.925
+### and eval_interleave_probs sum to 1.00; the two lists differ on
+### ecg_instruct_ptbxl (train 0.05, eval 0.075).
+###   TerraMind (0.30)
+###     0.30  benx_s1s2_train                                   <terramind> S1GRD + S2L2A
+###   MedGemma (0.425 train / 0.45 eval)
+###     0.05  acdc_medgemma_train
+###     0.05  mnm2_medgemma_train
+###     0.05  emidec_medgemma_train
+###     0.05  ecg_instruct_ptbxl_medgemma_train                 eval 0.075
+###     0.075 ecg_qa_ptbxl_paraphrased_medgemma_train
+###     0.075 ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train
+###     0.075 ecg_instruct_mimic_medgemma_train
+###   Auto-AVSR (0.25)
+###     0.25  mmtrain_lipcrops_autoavsr_video_train             <autoavsr_video> only
+### 8 GPUs (2 Booster nodes x 4 A100 64 GB): per_device_train_batch_size 8 -> 4 because bs 8 ran out of
+### memory on a 64 GB A100 (smoke test 2026-11-16). gradient_accumulation_steps stays 4, so the global
+### batch stays 4 x 4 x 8 = 128, as on Helios (8 x 4 x 4 GH200).
+
+
+
+### model
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+# flash_attn: fa3
+### compile
+# Compiles each repeated block stack on its own; see model/model_utils/compile.py.
+# packing is false, so sequence lengths vary every step and dynamic shapes are required.
+# regional_compile: true
+# regional_compile_dynamic: true
+# regional_compile_backend: inductor
+# regional_compile_mode: null
+# regional_compile_exclude: visual,vision_tower,vision_model,audio_tower,image_encoder
+
+### method
+stage: sft
+do_train: true
+finetuning_type: freeze
+freeze_trainable_layers: 0
+freeze_trainable_modules: all
+freeze_vision_tower: true
+freeze_language_model: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: benx_s1s2_train, acdc_medgemma_train, mnm2_medgemma_train, emidec_medgemma_train, ecg_instruct_ptbxl_medgemma_train, ecg_qa_ptbxl_paraphrased_medgemma_train, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_train, ecg_instruct_mimic_medgemma_train, mmtrain_lipcrops_autoavsr_video_train 
+mix_strategy: interleave_over
+interleave_probs: 0.30, 0.05, 0.05, 0.05, 0.075, 0.075, 0.075, 0.075, 0.25
+eval_dataset: benx_s1s2_val, acdc_medgemma_val, mnm2_medgemma_val, emidec_medgemma_val, ecg_instruct_ptbxl_medgemma_val_fixed, ecg_qa_ptbxl_paraphrased_medgemma_valid_fixed, ecg_qa_mimic_iv_ecg_paraphrased_medgemma_valid_fixed, ecg_instruct_mimic_medgemma_val_fixed, mmtrain_lipcrops_autoavsr_video_val
+eval_interleave_probs: 0.30, 0.05, 0.05, 0.05, 0.075, 0.075, 0.075, 0.075, 0.25
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 4096
+dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+use_stateful_dataloader: true
+max_steps: 60000
+accelerator_config:
+  dispatch_batches: false
+
+### output
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v4-stage1
+logging_steps: 10
+save_strategy: steps
+save_steps: 500
+save_total_limit: 3
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: wandb
+run_name: dvps-v4-stage1-proj-only
+
+### train
+use_reentrant_gc: false
+per_device_train_batch_size: 4  # Leonardo: 8 GPUs x 4 (was 8 on 4 GH200)
+gradient_accumulation_steps: 4
+learning_rate: 2.0e-5
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v4-stage1/checkpoint-11000
+stateful_dataloader_reset: true
+seed: 43
+max_grad_norm: 1.0
+
+### eval
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 500
+max_eval_samples: 1024
+# eval_loss is the mean of the per-dataset validation losses, weighted by
+# eval_interleave_probs. The best checkpoint by eval_loss is kept on top of
+# the 3 most recent ones. No early_stopping_steps: early stopping is disabled.
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false

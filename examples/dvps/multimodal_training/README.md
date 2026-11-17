@@ -72,3 +72,36 @@ bash examples/dvps/multimodal_training/run_build.sh \
 bash examples/dvps/multimodal_training/run_build.sh \
   --split BigEarthNet.txt:val --overwrite
 ```
+
+## Building on another cluster (Leonardo)
+
+`encoder_views_leonardo.json` defines the views used by `examples/dvps/dvps_v1`..`v4`
+with their sources written as Helios paths. Its `path_map` translates them (longest
+prefix wins) to Leonardo, and in `rewrite` mode the same rules are applied to the
+media paths stored in the routed columns, so the views open files that exist there.
+
+- `--check-paths` checks every media path a view exposes (rewritten paths, or the
+  source's own paths for symlinked views) and exits with status 3 if any is missing;
+  counts and examples go to `last_build_report.json`.
+- Splits that name `dataset_info` entries get them copied from `registry_template`
+  into `<output_root>/dataset_info.json` with `file_name` relative to the output root,
+  so a training config only needs `dataset_dir: <output_root>`.
+- `relative_symlinks: true` makes symlinked views survive a copy of the tree.
+- Rows with several payloads of one route (two-ECG comparisons) need
+  `"multi_payload": true` on that route binding; text-only datasets need
+  `"text_only": true` and no routes.
+- `"mode": "remap"` copies a file with only its media paths translated (the columns
+  listed in `path_columns`); markers and columns are not touched. Used for evaluation splits.
+- `"mode": "existing"` validates and registers a view that is already correct in
+  place (its `source` must be its own `output`); nothing is written.
+
+```bash
+ROOT=/leonardo_scratch/fast/trans_f3/dvps-multimodal
+M=$ROOT/dvps-fm/LLaMA-Factory/examples/dvps/multimodal_training
+sbatch -A trans_f3 -p lrd_all_serial -t 04:00:00 -c 4 --mem=30G \
+  -o $ROOT/dvps-fm/logs/%x-%j.out -e $ROOT/dvps-fm/logs/%x-%j.err \
+  --export=ALL,DVPS_ROOT=$ROOT/dvps-fm,BUILD_MODULES=python/3.11.7,VENV_PATH=$ROOT/envs/dvps_train \
+  $M/submit_build.sbatch --config $M/encoder_views_leonardo.json --check-paths
+```
+Leonardo's serial QoS allows 4 h per job: build BigEarthNet.txt_s1s2 (1.1 TB scanned)
+in its own job with `--dataset BigEarthNet.txt_s1s2`.
