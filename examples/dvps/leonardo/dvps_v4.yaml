@@ -1,16 +1,19 @@
-### LEONARDO COPY of examples/dvps/dvps_v4.yaml (rcorrente, Helios). Changed only: model, dataset_dir,
-### output_dir, resume_from_checkpoint (fresh start: Helios checkpoints are not on Leonardo) and
-### the wandb_run_id comment (a fresh run must not append to the Helios W&B run).
+### LEONARDO COPY of examples/dvps/dvps_v4.yaml (rcorrente, Helios). Changed: model, dataset_dir,
+### output_dir, per_device_train_batch_size, buffer_size and preprocessing_batch_size (1024 -> 128),
+### and the resume settings below.
 # Submit with:
 #   sbatch --job-name=dvps_v4 /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
 ### [v4 stage 1] Projector-only SFT from the composite base checkpoint.
 ### Thinker, every encoder, Qwen's native projectors, and the TerraMind
 ### fusion gate stay frozen. Trainable: projectors.terramind,
 ### projectors.medgemma, projectors.autoavsr_audio, projectors.autoavsr_video.
-### learning_rate 2.0e-5. resume_from_checkpoint is null. max_steps is
-### 60000; the Slurm walltime of run_train.sbatch ends the block at 48h.
+### learning_rate 2.0e-5. max_steps is 60000; the Slurm walltime of run_train.sbatch ends each block.
+### Resumes the Helios checkpoint-11000 (Helios stopped at step 11088) on 8 A100s. The saved
+### data position was written by 4 ranks x batch 8 with buffer 1024 and cannot be restored here,
+### so stateful_dataloader_reset starts a new stream and seed 43 (was 42) reshuffles it.
 # wandb_entity: DVPS-ai
 # wandb_project: dvps-fm
+# wandb_run_id: vlb9dt96
 ###
 ### Only datasets that reach an extra encoder. interleave_probs sum to 0.925
 ### and eval_interleave_probs sum to 1.00; the two lists differ on
@@ -73,8 +76,8 @@ dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training
 overwrite_cache: true
 packing: false
 streaming: true
-buffer_size: 1024
-preprocessing_batch_size: 1024
+buffer_size: 128
+preprocessing_batch_size: 128
 preprocessing_num_workers: 1
 dataloader_num_workers: 1
 dataloader_drop_last: true
@@ -84,7 +87,7 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/outputs/dvps_v4-stage1
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v4-stage1
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
@@ -105,7 +108,9 @@ warmup_ratio: 0.01
 bf16: true
 ddp_timeout: 180000000
 ddp_find_unused_parameters: true
-resume_from_checkpoint: null
+resume_from_checkpoint: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm-v1-ablations/dvps_v4-stage1/checkpoint-11000
+stateful_dataloader_reset: true
+seed: 43
 max_grad_norm: 1.0
 
 ### eval

@@ -460,7 +460,8 @@ class ReporterCallback(TrainerCallback):
                     "data_args": self.data_args.to_dict(),
                     "finetuning_args": self.finetuning_args.to_dict(),
                     "generating_args": self.generating_args.to_dict(),
-                }
+                },
+                allow_val_change=True,
             )
 
         if "trackio" in args.report_to:

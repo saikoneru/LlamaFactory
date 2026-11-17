@@ -49,7 +49,12 @@ source /leonardo_scratch/fast/trans_f3/dvps-multimodal/envs/dvps_train/bin/activ
 export PYTHONPATH=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/LLaMA-Factory/src
 export DISABLE_VERSION_CHECK=1
 export TOKENIZERS_PARALLELISM=false
-export HF_HOME=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache/huggingface
+# The shared cache and W&B folders belong to one user; others get a per-user copy.
+CACHE_ROOT=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache
+if [[ ! -w "${CACHE_ROOT}" ]]; then
+  CACHE_ROOT=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache-${USER}
+fi
+export HF_HOME="${CACHE_ROOT}/huggingface"
 # Booster compute nodes have no internet; the checkpoint is self-contained.
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
@@ -57,7 +62,7 @@ export HF_HUB_CACHE="${HF_HOME}/hub"
 export HF_MODULES_CACHE="${HF_HOME}/job_modules/${SLURM_JOB_ID}"
 export HF_DATASETS_CACHE="${HF_HOME}/job_datasets/${SLURM_JOB_ID}"
 # A fixed Inductor cache lets restarted jobs reuse kernels compiled by earlier runs.
-export TORCHINDUCTOR_CACHE_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/.cache/torchinductor
+export TORCHINDUCTOR_CACHE_DIR="${CACHE_ROOT}/torchinductor"
 export TORCHDYNAMO_CAPTURE_SCALAR_OUTPUTS=1
 export TORCHDYNAMO_CAPTURE_DYNAMIC_OUTPUT_SHAPE_OPS=1
 export TORCH_LOGS="graph_breaks,recompiles"
@@ -66,6 +71,9 @@ export WANDB_PROJECT
 # No internet on compute nodes: log offline, then `wandb sync` from a login node.
 export WANDB_MODE=offline
 export WANDB_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/wandb
+if [[ -d "${WANDB_DIR}" && ! -w "${WANDB_DIR}" ]]; then
+  export WANDB_DIR=/leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/wandb-${USER}
+fi
 mkdir -p "${WANDB_DIR}"
 if [[ -f "${HOME}/.wandb_api_key" ]]; then
   export WANDB_API_KEY="$(cat "${HOME}/.wandb_api_key")"

@@ -375,7 +375,12 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
         self._stateful_train_dataloader = train_dataloader
     
         checkpoint_dir = getattr(self, "_stateful_resume_checkpoint", None)
-        if checkpoint_dir:
+        if checkpoint_dir and self.args.stateful_dataloader_reset:
+            logger.warning_rank0(
+                f"stateful_dataloader_reset is set: not restoring the StatefulDataLoader state from {checkpoint_dir}; "
+                "the training data stream starts from the beginning."
+            )
+        elif checkpoint_dir:
             restored = load_stateful_dataloader_state(self, train_dataloader, checkpoint_dir)
             if restored:
                 self._load_rng_state(checkpoint_dir)

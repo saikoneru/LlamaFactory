@@ -153,6 +153,14 @@ class TrainingArguments(ProfilerArguments, Fp8Arguments, RayArguments, BaseTrain
         metadata={"help": "Use torchdata StatefulDataLoader for the training dataloader and enable exact dataloader checkpoint/resume."},
     )
 
+    stateful_dataloader_reset: bool = field(
+        default=False,
+        metadata={
+            "help": "When resuming, restore model, optimizer, scheduler and step but start a new data stream "
+            "instead of loading the saved StatefulDataLoader state (needed when the GPU count or batch size changed)."
+        },
+    )
+
     def __post_init__(self):
         RayArguments.__post_init__(self)
         BaseTrainingArguments.__post_init__(self)
