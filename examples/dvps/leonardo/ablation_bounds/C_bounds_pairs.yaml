@@ -3,8 +3,8 @@
 ### dvps_v1-v3), Thinker LoRA r16 + projectors from the composite base (same projector init), lr 2e-5,
 ### 1 node x 4 A100, batch 4 x accum 8 = 128 per step (as v1-v3), 1000 steps, seed 43.
 # Submit with (our branch of LLaMA-Factory, which expands the boundary tokens):
-#   sbatch --nodes=1 --job-name=abl_C_bounds_pairs --export=ALL,LF_SRC=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/src \
-#     /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm-ablation
+#   sbatch --nodes=1 --qos=qos_llm_prod2 --job-name=abl_C_bounds_pairs --export=ALL,LF_SRC=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/src \
+#     /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
 
 ### model
 model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr_bounds
