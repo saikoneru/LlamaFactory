@@ -2,6 +2,8 @@
 ### become their upright enclosing {"bbox_2d": [...]} in pixels of the resized image, BigEarthNet boxes and
 ### points are rendered on the 120 x 120 patch grid. Everything else as the cluster's dvps_v1_leonardo.yaml.
 ### Needs the *_qwenbox entries in dataset_dir's dataset_info.json and our branch of LLaMA-Factory.
+### Base: the composite checkpoint with boundary tokens around every encoder payload (TerraMind, MedGemma and
+### Auto-AVSR video in <|vision_bos|>/<|vision_eos|>, Auto-AVSR audio in <|audio_bos|>/<|audio_eos|>); same weights.
 # Submit with:
 #   sbatch --nodes=4 --job-name=dvps_v1_qwenbox --export=ALL,LF_SRC=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/src \
 #     /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> dvps-fm
@@ -38,7 +40,7 @@
 ### batch is 4 x 4 x 16 = 256. Submit with --nodes=4; run_train.sbatch defaults to 2 nodes.
 
 ### model
-model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr_bounds
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -80,7 +82,7 @@ accelerator_config:
   dispatch_batches: false
 
 ### output
-output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/qwen_boxes/dvps_v1_qwenbox
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/qwen_boxes/dvps_v1_qwenbox_bounds
 logging_steps: 10
 save_strategy: steps
 save_steps: 500
@@ -89,7 +91,7 @@ plot_loss: true
 overwrite_output_dir: false
 save_only_model: false
 report_to: wandb
-run_name: dvps-v1-qwenbox-lr-1e-4-gbs-256
+run_name: dvps-v1-qwenbox-bounds-lr-1e-4-gbs-256
 
 ### train
 use_reentrant_gc: false
