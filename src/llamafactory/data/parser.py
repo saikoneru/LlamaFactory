@@ -21,7 +21,7 @@ from huggingface_hub import hf_hub_download
 
 from ..extras.constants import DATA_CONFIG
 from ..extras.misc import use_modelscope, use_openmind
-from .box_format import BOX_FORMATS, BOX_TARGETS
+from .box_format import BOX_FORMATS, BOX_TARGETS, validate_box_grid
 from .extra_encoders import encoder_columns_from_config
 
 
@@ -52,6 +52,7 @@ class DatasetAttr:
     default_box_angle: int = 0
     canonical_box_angle: bool = False
     box_target: str = "geochat"
+    box_grid: tuple[int, int] | None = None
     # dpo columns
     chosen: str | None = None
     rejected: str | None = None
@@ -93,6 +94,11 @@ class DatasetAttr:
             raise ValueError(f"Unknown box_target {self.box_target!r}; expected one of {BOX_TARGETS}.")
         if self.box_target != "geochat" and self.box_format is None:
             raise ValueError("`box_target` needs `box_format`: the source boxes must be normalized first.")
+        self.set_attr("box_grid", attr)
+        if self.box_grid is not None:
+            if self.box_target != "qwen":
+                raise ValueError("`box_grid` is only used with `box_target: qwen`.")
+            self.box_grid = validate_box_grid(self.box_grid)
         if self.box_format is not None:
             if self.box_format not in BOX_FORMATS:
                 raise ValueError(f"Unknown box_format {self.box_format!r}; expected one of {BOX_FORMATS}.")

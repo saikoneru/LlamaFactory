@@ -221,3 +221,26 @@ def test_box_target_is_validated():
         DatasetAttr("hf_hub", "name").join({**base, "box_target": "pixels"})
     with pytest.raises(ValueError, match="box_format"):
         DatasetAttr("hf_hub", "name").join({"formatting": "sharegpt", "box_target": "qwen"})
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_sharegpt_converter_renders_a_fixed_box_grid_at_load_time():
+    attr = _sharegpt_attr(box_format="unit_list", box_target="qwen", box_grid=(120, 120))
+    converter = get_dataset_converter("sharegpt", attr, DataArguments())
+    prompt = "<terramind> Box the class at <point>(0.24, 0.21)</point>."
+    output = converter(_box_example(prompt, "[0.0 0.0, 0.54 0.47]"))
+    assert output["_prompt"][0]["content"] == '<terramind> Box the class at {"point_2d": [29, 25]}.'
+    assert output["_response"][0]["content"] == '{"bbox_2d": [0, 0, 65, 56]}'
+
+
+@pytest.mark.runs_on(["cpu", "mps"])
+def test_box_grid_is_validated_in_the_dataset_config():
+    base = {"formatting": "sharegpt", "box_format": "unit_list", "box_target": "qwen"}
+    attr = DatasetAttr("hf_hub", "name")
+    attr.join({**base, "box_grid": [120, 120]})
+    assert attr.box_grid == (120, 120)
+    with pytest.raises(ValueError, match="box_grid"):
+        DatasetAttr("hf_hub", "name").join({**base, "box_grid": [120]})
+    without_qwen_target = {"formatting": "sharegpt", "box_format": "unit_list", "box_grid": [120, 120]}
+    with pytest.raises(ValueError, match="box_grid"):
+        DatasetAttr("hf_hub", "name").join(without_qwen_target)

@@ -22,8 +22,10 @@ from llamafactory.data.box_format import (
     enclosing_pixel_box,
     has_qwen_boxes,
     normalize_boxes,
+    pixel_point,
     render_qwen_boxes,
     to_qwen_markers,
+    validate_box_grid,
 )
 
 
@@ -203,3 +205,29 @@ def test_render_writes_qwen_bbox_json():
     text = 'Answer: <qwen_box>25,40,33,60,0</qwen_box>'
     assert render_qwen_boxes(text, 504, 504) == 'Answer: {"bbox_2d": [126, 202, 166, 302]}'
     assert has_qwen_boxes(text) and not has_qwen_boxes(render_qwen_boxes(text, 504, 504))
+
+
+def test_qwen_markers_also_replace_normalized_points():
+    text = "Box the class at <point>(62, 33)</point>: {<5><0><100><89>|<0>}"
+    marked = to_qwen_markers(text)
+    assert marked == "Box the class at <qwen_point>62,33</qwen_point>: <qwen_box>5,0,100,89,0</qwen_box>"
+    assert has_qwen_boxes("<qwen_point>1,2</qwen_point>")
+
+
+def test_render_writes_qwen_point_json():
+    text = "at <qwen_point>62,33</qwen_point>"
+    assert render_qwen_boxes(text, 504, 504) == 'at {"point_2d": [312, 166]}'
+    assert pixel_point(100, 0, 120, 120) == (120, 0)
+
+
+def test_bigearthnet_renders_on_the_fixed_120_grid():
+    # A BigEarthNet box prompt after unit_list normalization, rendered on its 120 x 120 patch grid.
+    normalized = normalize_boxes("Box the class at <point>(0.65, 0.84)</point>. [0.25 0.59, 0.9 1.0]", "unit_list")
+    rendered = render_qwen_boxes(to_qwen_markers(normalized.text), *validate_box_grid([120, 120]))
+    assert rendered == 'Box the class at {"point_2d": [78, 101]}. {"bbox_2d": [30, 71, 108, 120]}'
+
+
+@pytest.mark.parametrize("grid", [[120], [0, 120], [120.0, 120], "120x120", [True, 120], None])
+def test_box_grid_is_validated(grid):
+    with pytest.raises(ValueError, match="box_grid"):
+        validate_box_grid(grid)

@@ -23,8 +23,9 @@ Source formats, set per dataset as ``box_format`` in ``dataset_info.json``:
 - ``geochat``, ``percent``: ``{<x1><y1><x2><y2>}``, with or without ``|<angle>``, in [0, 100].
 - ``unit_list``: ``[x1 y1, x2 y2]`` in [0, 1], and ``<point>(x, y)</point>`` in [0, 1].
 
-``box_target: qwen`` (default ``geochat``) then trains the normalized boxes in Qwen2.5-VL's own
-format instead: ``{"bbox_2d": [x1, y1, x2, y2]}`` in pixels of the resized image (see below).
+``box_target: qwen`` (default ``geochat``) then trains the normalized boxes and points in
+Qwen2.5-VL's own format instead: ``{"bbox_2d": [x1, y1, x2, y2]}`` and ``{"point_2d": [x, y]}``
+in pixels of the resized image, or of the fixed ``box_grid`` of a dataset without one (see below).
 
 A box that is out of range, has reversed corners, or is cut off makes the message invalid.
 Such boxes are never repaired: a value like ``<981>`` is probably truncated, so clipping it
@@ -34,7 +35,7 @@ would produce a wrong label that looks correct.
 import math
 import re
 from collections import Counter
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 COORDINATE_MAX = 100
@@ -187,23 +188,46 @@ def normalize_boxes(
 # GeoChat's angle rotates the given corners clockwise about their centre (0 = upright). Qwen's format
 # has no angle, so a rotated box becomes its upright enclosing box, computed in pixels so that
 # non-square images are not distorted.
+#
+# Normalized points, ``<point>(x, y)</point>`` in [0, 100], become ``{"point_2d": [x, y]}`` on the
+# same pixel grid, so prompts and answers share one coordinate format.
+#
+# A dataset whose input is not an image the Qwen processor resizes (BigEarthNet through TerraMind)
+# sets ``box_grid: [width, height]`` instead: its boxes are rendered at load time in pixels of that
+# fixed grid, here the 120 x 120 pixels of a BigEarthNet patch.
 
 BOX_TARGETS = ("geochat", "qwen")
 _QWEN_MARKER = re.compile(r"<qwen_box>(\d+),(\d+),(\d+),(\d+),(\d+)</qwen_box>")
+_QWEN_POINT_MARKER = re.compile(r"<qwen_point>(\d+),(\d+)</qwen_point>")
+_NORMALIZED_POINT = re.compile(rf"<point>\({_INTEGER},{_INTEGER}\)</point>")
 
 
 def to_qwen_markers(text: str) -> str:
-    r"""Replace normalized ``{<x1><y1><x2><y2>|<angle>}`` boxes with markers a Qwen plugin renders."""
+    r"""Replace normalized boxes and points with markers that are rendered in pixels later."""
 
     def replace(match: re.Match) -> str:
         x1, y1, x2, y2 = match.group(1, 2, 3, 4)
         return f"<qwen_box>{x1},{y1},{x2},{y2},{match.group(5) or 0}</qwen_box>"
 
-    return _BRACED_BOX.sub(replace, text)
+    def replace_point(match: re.Match) -> str:
+        return f"<qwen_point>{match.group(1)},{match.group(2)}</qwen_point>"
+
+    return _NORMALIZED_POINT.sub(replace_point, _BRACED_BOX.sub(replace, text))
 
 
 def has_qwen_boxes(text: str) -> bool:
-    return "<qwen_box>" in text
+    return "<qwen_box>" in text or "<qwen_point>" in text
+
+
+def validate_box_grid(box_grid: Any) -> tuple[int, int]:
+    r"""A ``box_grid`` is ``[width, height]``, two positive integers."""
+    if (
+        not isinstance(box_grid, (list, tuple))
+        or len(box_grid) != 2
+        or not all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in box_grid)
+    ):
+        raise ValueError(f"`box_grid` must be [width, height] in positive integer pixels, got {box_grid!r}.")
+    return int(box_grid[0]), int(box_grid[1])
 
 
 def enclosing_pixel_box(
@@ -226,11 +250,23 @@ def enclosing_pixel_box(
     return clip(left, width), clip(top, height), clip(right, width), clip(bottom, height)
 
 
+def pixel_point(x: int, y: int, width: int, height: int) -> tuple[int, int]:
+    r"""A percent point in pixels of a ``width`` x ``height`` image."""
+    return (
+        min(max(_round_half_up(x / COORDINATE_MAX * width), 0), width),
+        min(max(_round_half_up(y / COORDINATE_MAX * height), 0), height),
+    )
+
+
 def render_qwen_boxes(text: str, width: int, height: int) -> str:
-    r"""Render the markers in ``text`` as Qwen2.5-VL ``{"bbox_2d": [...]}`` in pixels."""
+    r"""Render the markers in ``text`` as Qwen2.5-VL ``bbox_2d`` and ``point_2d`` JSON in pixels."""
 
     def replace(match: re.Match) -> str:
         box = enclosing_pixel_box(*(int(value) for value in match.groups()), width, height)
         return '{"bbox_2d": [' + ", ".join(str(value) for value in box) + "]}"
 
-    return _QWEN_MARKER.sub(replace, text)
+    def replace_point(match: re.Match) -> str:
+        x, y = pixel_point(int(match.group(1)), int(match.group(2)), width, height)
+        return f'{{"point_2d": [{x}, {y}]}}'
+
+    return _QWEN_POINT_MARKER.sub(replace_point, _QWEN_MARKER.sub(replace, text))
