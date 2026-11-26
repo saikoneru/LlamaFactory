@@ -43,7 +43,7 @@
 ### batch is 4 x 4 x 16 = 256. Submit with --nodes=4; run_train.sbatch defaults to 2 nodes.
 
 ### model
-model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr_bounds
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal/dvps-fm/checkpoints/qwen_omni_terramind_medgemma_ecg_autoavsr_bounds
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
