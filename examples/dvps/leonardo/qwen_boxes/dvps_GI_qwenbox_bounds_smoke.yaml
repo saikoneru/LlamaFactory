@@ -1,0 +1,102 @@
+### SMOKE TEST of qwen_boxes/dvps_GI_qwenbox_bounds_lr1e-4.yaml: 50 steps on 1 node (global batch 4 x 4 x 4 = 64),
+### eval + save at step 50 with 64 samples per eval dataset, no W&B. Everything else unchanged.
+### Geo-Intelligence expert with both fixes: copy of rcorrente's domains/dvps_GI_leonardo_lr1e-4.yaml with
+### (1) every box and point in Qwen2.5-VL's format (the *_qwenbox registry entries: GeoChat boxes become upright
+### {"bbox_2d": [...]} in pixels of the resized image, BigEarthNet boxes and points are rendered on the 120 x 120 grid) and
+### (2) <|vision_bos|>/<|vision_eos|> around each TerraMind payload (the qwen_omni_terramind_s1s2_bounds base, same weights).
+### Everything else is unchanged, so it compares directly with dvps_GI_leonardo_lr1e-4 at the same step.
+# Submit with (our branch of LLaMA-Factory):
+#   sbatch --nodes=1 --qos=qos_llm_prod2 --time=01:00:00 --job-name=dvps_GI_qwenbox_bounds_smoke --output=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/logs/train/%x-%j.log \
+#     --export=ALL,LF_SRC=/leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/src /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/LLaMA-Factory/examples/dvps/leonardo/run_train.sbatch <this yaml> GI-finetuning
+### Thinker LoRA R=16 and full training of the TerraMind projector(s). Qwen's vision and audio towers and its native
+### projectors stay frozen. max_steps is 60000 (same cosine schedule as the reference); every checkpoint is kept.
+# wandb_entity: DVPS-ai
+# wandb_project: GI-finetuning
+###
+### Weights (sum 1.00).
+###     0.4394  benx_s1s2_train_qwenbox
+###     0.1818  mmtrain_geochat_qwen_train_qwenbox
+###     0.1970  rsvqa_hr_train
+###     0.1818  mmtrain_rsteller_qwen_train
+### 16 GPUs (4 Booster nodes x 4 A100 64 GB), per_device_train_batch_size 4, gradient_accumulation_steps 4,
+### global batch 4 x 4 x 16 = 256, as in dvps_v1_leonardo.
+
+### model
+model_name_or_path: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/checkpoints/qwen_omni_terramind_s1s2_bounds
+image_max_pixels: 262144
+video_max_pixels: 16384
+trust_remote_code: true
+low_cpu_mem_usage: false
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+additional_target: projectors
+freeze_vision_tower: true
+freeze_multi_modal_projector: false
+
+### dataset
+dataset: benx_s1s2_train_qwenbox, mmtrain_geochat_qwen_train_qwenbox, rsvqa_hr_train, mmtrain_rsteller_qwen_train
+mix_strategy: interleave_over
+interleave_probs: 0.4394, 0.1818, 0.1970, 0.1818
+eval_dataset: benx_s1s2_val_qwenbox, mmtrain_geochat_qwen_val_qwenbox, rsvqa_hr_val, mmtrain_rsteller_qwen_eval
+eval_interleave_probs: 0.4394, 0.1818, 0.1970, 0.1818
+eval_on_each_dataset: true
+template: qwen2_omni
+cutoff_len: 4096
+dataset_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal/multimodal_training
+overwrite_cache: true
+packing: false
+streaming: true
+buffer_size: 128
+preprocessing_batch_size: 128
+preprocessing_num_workers: 1
+dataloader_num_workers: 1
+dataloader_drop_last: true
+use_stateful_dataloader: true
+max_steps: 50
+accelerator_config:
+  dispatch_batches: false
+
+
+### output
+output_dir: /leonardo_scratch/fast/trans_f3/dvps-multimodal-smestici/outputs/smoke/dvps_GI_qwenbox_bounds_smoke
+logging_steps: 10
+save_strategy: steps
+save_steps: 50
+save_total_limit: null
+plot_loss: true
+overwrite_output_dir: false
+save_only_model: false
+report_to: none
+run_name: dvps-GI-qwenbox-bounds-smoke
+
+### train
+use_reentrant_gc: false
+per_device_train_batch_size: 4  # 16 GPUs x 4 x accum 4 = global 256
+gradient_accumulation_steps: 4
+learning_rate: 1.0e-4
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+ddp_timeout: 180000000
+ddp_find_unused_parameters: true
+resume_from_checkpoint: null
+max_grad_norm: 1.0
+
+
+### eval
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 50
+max_eval_samples: 64
+# eval_loss is the mean of the per-dataset validation losses, weighted by
+# eval_interleave_probs. The best checkpoint by eval_loss is kept on top of
+# every saved checkpoint (save_total_limit: null). No early_stopping_steps: early stopping is disabled.
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
